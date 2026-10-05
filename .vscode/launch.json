@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "FastAPI: отладка (http://127.0.0.1:8000/docs)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["app.main:app", "--reload", "--reload-dir", "app", "--port", "8000"],
+            "cwd": "${workspaceFolder}/backend",
+            "python": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+            "envFile": "${workspaceFolder}/backend/.env",
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Pytest: все тесты",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "-v"
+            ],
+            "cwd": "${workspaceFolder}/backend",
+            "python": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/backend"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

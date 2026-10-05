@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Демо виджета — Ad Platform</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 760px;
+           margin: 32px auto; padding: 0 16px; color: #1a1d21; background: #f6f7f9; line-height: 1.5; }
+    code, pre { background: #eceff3; border-radius: 4px; padding: 2px 6px; font-size: 13px; }
+    pre { padding: 12px; overflow-x: auto; }
+    .slot { margin: 16px 0; }
+    .muted { color: #5b6470; font-size: 14px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #15181c; color: #e6e8eb; } code, pre { background: #252a31; } .muted { color: #a9b1bb; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Демо-страница сайта-партнёра</h1>
+  <p class="muted">Площадка: <code id="code"></code>. Другую можно выбрать параметром
+    <code>?placement=код_площадки</code>.</p>
+
+  <div class="slot" id="slot"></div>
+
+  <p>Так выглядит обычная статья на сайте партнёра. Баннер выше вставлен виджетом:
+    он запросил рекламу у платформы, показ засчитался, а клик пойдёт через
+    <code>/api/v1/ad/click/…</code> со списанием с баланса рекламодателя.</p>
+
+  <h2>Код для вставки</h2>
+  <pre id="snippet"></pre>
+
+  <script>
+    // Площадка из адреса страницы; по умолчанию — из инструкции проекта
+    var code = new URLSearchParams(location.search).get("placement") || "header_top_banner";
+    document.getElementById("code").textContent = code;
+    document.getElementById("slot").setAttribute("data-adp-placement", code);
+    document.getElementById("snippet").textContent =
+      '<script async src="' + location.origin + '/widget.js" data-placement="' + code + '"><\/script>';
+  </script>
+  <script async src="/widget.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+-r requirements.txt
+httpx2==2.13.1
+pytest==9.1.1
+playwright==1.63.0  # только для браузерных тестов: python -m pytest -m e2e

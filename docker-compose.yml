@@ -1,0 +1,40 @@
+# Запуск: скопируйте .env.example в .env, заполните пароли и выполните
+#   docker compose up -d --build
+# Первый администратор:
+#   docker compose exec api python -m app.cli create-admin admin@example.com
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: adp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: adp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adp -d adp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://adp:${POSTGRES_PASSWORD}@db:5432/adp
+      SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в .env}
+      # Пусто — сторонним фронтендам доступ закрыт (встроенный интерфейс /app работает и так)
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      WEB_WORKERS: ${WEB_WORKERS:-2}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      CLICK_DEDUP_MINUTES: ${CLICK_DEDUP_MINUTES:-10}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

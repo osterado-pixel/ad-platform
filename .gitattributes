@@ -1,0 +1,9 @@
+# Нормализация концов строк в репозитории
+* text=auto
+# Выполняются в Linux-контейнере — только LF
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+# Скрипты Windows — CRLF
+*.ps1 text eol=crlf
+*.png binary
