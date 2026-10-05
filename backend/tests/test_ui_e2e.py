@@ -71,14 +71,15 @@ def server():
 def browser():
     with playwright_api.sync_playwright() as p:
         b = None
-        for channel in ("msedge", "chrome"):
+        # Установленный Edge/Chrome, иначе встроенный Chromium Playwright (CI: playwright install chromium)
+        for channel in ("msedge", "chrome", None):
             try:
                 b = p.chromium.launch(channel=channel, headless=True)
                 break
             except Exception:
                 continue
         if b is None:
-            pytest.skip("Не найден Microsoft Edge или Google Chrome")
+            pytest.skip("Нет браузера: установите Edge/Chrome или выполните playwright install chromium")
         yield b
         b.close()
 

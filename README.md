@@ -255,7 +255,12 @@ TEST_DATABASE_URL=postgresql+psycopg2://user@host/adp_test pytest
 E2E_DATABASE_URL=postgresql+psycopg2://user@host/adp_e2e  pytest -m e2e
 ```
 
-Тесты никогда не трогают рабочую `app.db`. В VS Code: «Run and Debug» → «Pytest: все тесты» или
+Тесты никогда не трогают рабочую `app.db`.
+
+**CI (GitHub Actions)** — `.github/workflows/test.yml`, запускается на каждый push и pull request
+в `main` / `master` / `develop`: тесты на Python 3.13 и 3.14 × SQLite и PostgreSQL (с покрытием
+кода), миграции на PostgreSQL (накат, сверка с моделями, откат), браузерные тесты в Chromium
+(скриншоты сбоев — в артефактах), сборка Docker-образа. В VS Code: «Run and Debug» → «Pytest: все тесты» или
 «FastAPI: отладка».
 
 ## Изменение схемы базы
