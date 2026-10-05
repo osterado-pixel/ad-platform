@@ -30,18 +30,20 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 
 Откройте <http://127.0.0.1:8000/app> и войдите.
 
-### Docker, один контейнер на SQLite (проще всего)
+### Docker + PostgreSQL, настройки из backend/.env (проще всего)
 
 ```bash
 cd backend
-docker compose up -d --build        # SECRET_KEY берётся из backend/.env (или задайте переменной)
+cp .env.example .env     # заполните POSTGRES_PASSWORD и SECRET_KEY (случайные!)
+docker compose up -d --build
 docker compose exec web python -m app.cli create-admin admin@example.com
 ```
 
-База лежит в томе Docker `sqlite_data` и переживает пересоздание контейнера и обновление образа.
-Подходит для небольшой нагрузки на одном сервере; для роста — вариант с PostgreSQL ниже.
+Приложение ждёт готовности PostgreSQL и само применяет миграции. Данные — в томе `postgres_data`,
+переживают пересоздание контейнеров. База доступна только с этого компьютера:
+`127.0.0.1:5433` (pgAdmin, DBeaver), пользователь и пароль — из `backend/.env`.
 
-### Docker + PostgreSQL (сервер)
+### Docker + PostgreSQL, настройки из корневого .env (сервер)
 
 ```bash
 cp .env.example .env          # заполните POSTGRES_PASSWORD и SECRET_KEY
@@ -264,7 +266,7 @@ backend/
     cli.py           команды администратора
   migrations/        миграции Alembic
   tests/             тесты (pytest), включая браузерные (test_ui_e2e.py)
-backend/docker-compose.yml  один контейнер на SQLite
+backend/docker-compose.yml  приложение + PostgreSQL (настройки из backend/.env)
 docker-compose.yml   API + PostgreSQL
 docker-compose.prod.yml  + Caddy: домен и HTTPS (накладывается на docker-compose.yml)
 deploy/Caddyfile     настройки HTTPS-прокси

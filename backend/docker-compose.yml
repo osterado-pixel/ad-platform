@@ -1,19 +1,36 @@
-# Простой запуск одним контейнером на SQLite (без PostgreSQL).
-# Для боевого сервера с PostgreSQL и HTTPS — docker-compose.yml в корне проекта (см. README).
+# Запуск в Docker: приложение + PostgreSQL. Значения — из backend/.env (см. .env.example).
 #
 #   cd backend
 #   docker compose up -d --build
 #   docker compose exec web python -m app.cli create-admin admin@example.com
 #
-# SECRET_KEY берётся из backend/.env (start.ps1 создаёт его сам) или из переменной окружения.
+# Боевой сервер с доменом и HTTPS — docker-compose.yml в корне проекта (см. README).
 
 services:
+  db:
+    image: postgres:17-alpine
+    container_name: ad_platform_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Без значения по умолчанию: пароль из примера подбирается первым
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в backend/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-ad_platform_db}
+    ports:
+      # Только с этого компьютера (pgAdmin, DBeaver, psql): 127.0.0.1, а не все адреса —
+      # иначе база доступна из сети. 5433, а не 5432: 5432 часто занят локальным PostgreSQL
+      - "127.0.0.1:${POSTGRES_PUBLISH_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: ad_platform_backend
-    # Перезапуск после сбоя и перезагрузки сервера, но не после ручной остановки
     restart: unless-stopped
     ports:
       - "${API_PORT:-8000}:8000"
@@ -21,18 +38,15 @@ services:
       - path: .env
         required: false
     environment:
-      # База — внутри тома /app/data: переживает пересоздание контейнера и обновление образа
-      DATABASE_URL: sqlite:////app/data/app.db
-      # Ключ подписи токенов не хранится в этом файле (он попал бы в Git)
-      SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в backend/.env или в переменной окружения}
-      JWT_ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
-      # SQLite — один писатель: один процесс сервера (несколько — для PostgreSQL)
-      WEB_WORKERS: 1
-    volumes:
-      # Именованный том Docker с базой SQLite
-      - sqlite_data:/app/data
-    # Проверка здоровья уже встроена в образ (HEALTHCHECK в Dockerfile, без curl)
+      # Внутри Docker база доступна по имени сервиса db и порту 5432
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в backend/.env}@db:5432/${POSTGRES_DB:-ad_platform_db}
+      # Без значения по умолчанию: известный всем ключ позволяет подделать вход под любым пользователем
+      SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в backend/.env}
+      WEB_WORKERS: ${WEB_WORKERS:-2}
+    depends_on:
+      db:
+        # Ждём, пока PostgreSQL реально принимает подключения: иначе миграции при старте упадут
+        condition: service_healthy
 
 volumes:
-  sqlite_data:
+  postgres_data:
