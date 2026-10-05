@@ -88,6 +88,16 @@ venv/bin/python -m app.cli create-admin admin@example.com
 venv/bin/uvicorn app.main:app --reload --reload-dir app
 ```
 
+### Тестовые данные
+
+```bash
+cd backend && python seed.py                 # в Docker: docker compose exec api python seed.py
+```
+
+Создаёт рекламодателя `advertiser@example.com` / `password123` (баланс 500), площадку
+`habr_main_banner` и активную кампанию со статистикой. Повторный запуск ничего не дублирует.
+Пароль известен всем — только для разработки и демонстрации, не для боевого сервера.
+
 ## Как пользоваться
 
 1. **Админ → Площадки**: создайте рекламное место (код, цена клика) и скопируйте код вставки.
