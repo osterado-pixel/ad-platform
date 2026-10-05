@@ -1,10 +1,28 @@
-venv/
-__pycache__/
+# Что не копировать в образ (COPY . .)
+
+# Кеш Python
+__pycache__
 *.pyc
-.pytest_cache/
-.env
+*.pyo
+*.pyd
+.pytest_cache
+
+# Виртуальные окружения
+.venv
+venv
+
+# Базы данных SQLite, их служебные файлы и резервные копии — в образе им не место
 *.db
+*.sqlite3
 *.db-wal
 *.db-shm
 *.db.bak-*
-tests/
+backups
+
+# Секреты: передаются переменными окружения (docker-compose.yml), а не файлом в образе
+.env
+
+# Git и тесты — в работающем контейнере не нужны
+.git
+.gitignore
+tests
