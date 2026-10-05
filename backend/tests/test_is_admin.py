@@ -46,3 +46,29 @@ def test_api_exposes_is_admin_and_access_matches(client, db):
     # Права в API определяются тем же признаком
     assert client.get("/api/v1/users", headers=h(admin)).status_code == 200
     assert client.get("/api/v1/users", headers=h(plain)).status_code == 403
+
+
+def test_get_current_admin_is_same_dependency(client, db):
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+    from app.auth import get_current_admin, require_admin
+    from app.database import get_db
+    assert get_current_admin is require_admin
+
+    probe = FastAPI()
+
+    @probe.get("/admin-only")
+    def admin_only(admin: User = Depends(get_current_admin)):
+        return {"email": admin.email}
+
+    probe.dependency_overrides[get_db] = lambda: db
+    c = TestClient(probe)
+    admin = User(email="boss@mail.ru", hashed_password="x", is_admin=True)
+    plain = User(email="plain@mail.ru", hashed_password="x")
+    db.add_all([admin, plain])
+    db.commit()
+    h = lambda u: {"Authorization": f"Bearer {create_access_token(u.id)}"}
+    assert c.get("/admin-only", headers=h(admin)).json() == {"email": "boss@mail.ru"}
+    r = c.get("/admin-only", headers=h(plain))
+    assert r.status_code == 403 and r.json()["detail"] == "Недостаточно прав. Требуются права администратора."
+    assert c.get("/admin-only").status_code == 401

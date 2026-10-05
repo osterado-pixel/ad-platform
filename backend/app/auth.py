@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import User, UserRole
+from app.models import User
 
 # bcrypt учитывает только первые 72 байта пароля (не символа: кириллица — 2 байта)
 BCRYPT_MAX_BYTES = 72
@@ -80,10 +80,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Проверяет, что текущий пользователь является администратором."""
-    if current_user.role != UserRole.ADMIN:
+    """Проверяет, обладает ли текущий аутентифицированный пользователь правами администратора."""
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Доступ запрещен: требуется роль администратора",
+            detail="Недостаточно прав. Требуются права администратора.",
         )
     return current_user
+
+
+# Имя из учебной инструкции — та же самая зависимость (одна проверка прав, а не две копии)
+get_current_admin = require_admin
