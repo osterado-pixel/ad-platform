@@ -292,3 +292,57 @@ def test_cli_create_admin(db, monkeypatch):
     db.expire_all()
     assert db.query(User).count() == 1
     assert verify_password("newpassword1", db.query(User).one().hashed_password)
+
+
+def test_cli_set_password(db, monkeypatch):
+    from app.auth import verify_password
+    monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    db.add(User(email="u@mail.ru", hashed_password="x"))
+    db.commit()
+    assert cli.set_password("U@mail.ru", "short") == 1
+    assert cli.set_password("nobody@mail.ru", "password123") == 1
+    assert cli.set_password("U@mail.ru", "password123") == 0
+    db.expire_all()
+    u = db.query(User).one()
+    assert verify_password("password123", u.hashed_password) and u.token_version == 1
+
+
+def test_cli_purge(db, world, monkeypatch):
+    import time
+    from app.models import AuthAttempt
+    monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    _, _, campaign = world
+    now_min = int(time.time()) // 60
+    db.add_all([
+        Click(campaign_id=campaign.id, ip_hash="a" * 64, time_window=now_min - 31 * 24 * 60, cost=Decimal("1")),
+        Click(campaign_id=campaign.id, ip_hash="b" * 64, time_window=now_min - 5, cost=Decimal("1")),
+        AuthAttempt(kind="login_ip", key="k" * 64, ts=int(time.time()) - 2 * 86400),
+        AuthAttempt(kind="login_ip", key="k" * 64, ts=int(time.time())),
+    ])
+    db.commit()
+    assert cli.purge(0) == 1  # меньше окна защиты от повторов нельзя
+    assert cli.purge(30) == 0
+    db.expire_all()
+    assert [c.ip_hash[0] for c in db.query(Click)] == ["b"]
+    assert db.query(AuthAttempt).count() == 1
+
+
+def test_cli_backup_db(tmp_path, monkeypatch):
+    import sqlite3
+    from sqlalchemy import create_engine
+    import app.database as database
+    src = tmp_path / "live.db"
+    con = sqlite3.connect(src)
+    con.execute("create table t (x)")
+    con.execute("insert into t values (42)")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(database, "engine", create_engine(f"sqlite:///{src.as_posix()}"))
+    monkeypatch.setattr(database, "is_sqlite", True)
+    assert cli.backup_db(str(tmp_path / "backups")) == 0
+    [copy] = list((tmp_path / "backups").glob("app-*.db"))
+    con = sqlite3.connect(copy)
+    try:
+        assert con.execute("select x from t").fetchone() == (42,)
+    finally:
+        con.close()
