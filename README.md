@@ -260,7 +260,18 @@ E2E_DATABASE_URL=postgresql+psycopg2://user@host/adp_e2e  pytest -m e2e
 **CI (GitHub Actions)** — `.github/workflows/test.yml`, запускается на каждый push и pull request
 в `main` / `master` / `develop`: тесты на Python 3.13 и 3.14 × SQLite и PostgreSQL (с покрытием
 кода), миграции на PostgreSQL (накат, сверка с моделями, откат), браузерные тесты в Chromium
-(скриншоты сбоев — в артефактах), сборка Docker-образа. В VS Code: «Run and Debug» → «Pytest: все тесты» или
+(скриншоты сбоев — в артефактах), сборка Docker-образа.
+
+**Готовый образ (GHCR).** После каждого push в `main`, если прошли все проверки, образ
+публикуется в GitHub Container Registry с тегами `latest` и коротким хешем коммита:
+
+```bash
+docker pull ghcr.io/osterado-pixel/ad-platform:latest
+```
+
+Новый пакет на GitHub по умолчанию приватный: чтобы скачивать без входа, откройте его в профиле →
+Packages → `ad-platform` → Package settings → Change visibility. Для приватного —
+`docker login ghcr.io` с токеном, у которого есть право `read:packages`. В VS Code: «Run and Debug» → «Pytest: все тесты» или
 «FastAPI: отладка».
 
 ## Изменение схемы базы
