@@ -41,6 +41,23 @@ docker compose exec api python -m app.cli create-admin admin@example.com
 Платформа: `http://СЕРВЕР:8000/app`. Миграции базы применяются автоматически при старте.
 Данные PostgreSQL хранятся в томе `pgdata` и переживают пересборку.
 
+### Боевой сервер: домен + HTTPS
+
+Нужны: сервер с Docker, домен, DNS-запись `A` домена → IP сервера, открытые порты 80 и 443.
+
+```bash
+cp .env.example .env     # POSTGRES_PASSWORD, SECRET_KEY, DOMAIN=ads.example.com, ACME_EMAIL=you@example.com
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose exec api python -m app.cli create-admin admin@example.com
+```
+
+Платформа: `https://ads.example.com/app`. Сертификат Let's Encrypt Caddy получает и продлевает сам.
+API наружу не открыт — только через Caddy, поэтому платформа видит реальный IP посетителя, а подставить
+чужой IP в `X-Forwarded-For` нельзя (проверено). HTTP перенаправляется на HTTPS, включён HSTS.
+
+Обновление до новой версии: `git pull` и та же команда `up -d --build` — миграции базы применятся
+при старте.
+
 ### Вручную (любая ОС)
 
 ```bash
@@ -142,6 +159,36 @@ const next = r.headers.get("X-Next-Before-Id");             // → ?before_id=${
 `Content-Security-Policy: default-src 'none'`, у `/app` — строгий CSP (только свои скрипты);
 по HTTPS — `Strict-Transport-Security`.
 
+## Резервные копии и обслуживание
+
+**PostgreSQL (Docker)** — копия и восстановление:
+
+```bash
+docker compose exec -T db pg_dump -U adp -Fc adp > backup-$(date +%F).dump
+docker compose exec -T db pg_restore -U adp -d adp --clean --if-exists < backup-2026-10-05.dump
+```
+
+**SQLite** (без Docker) — копия на ходу, без остановки сервера: `python -m app.cli backup-db backups`.
+
+Делайте копию ежедневно (cron / Планировщик заданий) и храните вне сервера.
+
+**Очистка служебных записей** — раз в сутки (`docker compose exec api ...` в Docker):
+
+```bash
+python -m app.cli purge --clicks-days 30
+```
+
+Удаляет записи о кликах старше 30 дней (они нужны только для защиты от повторов; статистика по дням
+и журнал денег не затрагиваются) и старые попытки входа.
+
+## Безопасность
+
+- Вход: не больше 5 неудачных попыток на email и 20 на IP за 15 минут, затем `429` с `Retry-After`;
+  регистрация — не больше 10 с IP в час. Счётчики в базе — работают с несколькими процессами.
+- Смена пароля (`/app` → профиль, или `POST /api/v1/auth/change-password`) завершает все остальные сеансы.
+- Забыл пароль (почтовой рассылки нет): администратор сбрасывает — `python -m app.cli set-password email`.
+- Пароли — bcrypt; email и IP в служебных таблицах — только как HMAC-хеш.
+
 ## Команды администратора
 
 Из папки `backend` (в Docker — `docker compose exec api ...`):
@@ -150,6 +197,9 @@ const next = r.headers.get("X-Next-Before-Id");             // → ?before_id=${
 python -m app.cli create-admin admin@example.com      # создать админа (пароль спросит)
 python -m app.cli make-admin user@example.com         # сделать админом существующего
 python -m app.cli add-balance user@example.com 1000   # пополнить баланс
+python -m app.cli set-password user@example.com       # сбросить пароль (сеансы завершатся)
+python -m app.cli backup-db backups                   # копия SQLite
+python -m app.cli purge --clicks-days 30              # очистка служебных записей
 alembic upgrade head                                  # применить миграции базы
 ```
 
@@ -196,4 +246,6 @@ backend/
   migrations/        миграции Alembic
   tests/             тесты (pytest), включая браузерные (test_ui_e2e.py)
 docker-compose.yml   API + PostgreSQL
+docker-compose.prod.yml  + Caddy: домен и HTTPS (накладывается на docker-compose.yml)
+deploy/Caddyfile     настройки HTTPS-прокси
 ```

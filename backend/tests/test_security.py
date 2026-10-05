@@ -79,3 +79,10 @@ def test_hsts_over_https():
 
 def test_charset_still_added(client):
     assert client.get("/api/v1/health").headers["content-type"] == "application/json; charset=utf-8"
+
+
+def test_allowed_hosts_keeps_internal_addresses():
+    from app.config import Settings
+    s = Settings(secret_key="x" * 32, allowed_hosts="ads.example.com")
+    assert s.allowed_host_list == ["ads.example.com", "127.0.0.1", "localhost"]
+    assert Settings(secret_key="x" * 32, allowed_hosts="*").allowed_host_list == ["*"]

@@ -46,7 +46,12 @@ class Settings(BaseSettings):
 
     @property
     def allowed_host_list(self) -> list[str]:
-        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+        hosts = [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+        if hosts and "*" not in hosts:
+            # Внутренние адреса — всегда: по ним ходит проверка здоровья контейнера (HEALTHCHECK).
+            # Снаружи по ним не обратиться: прокси принимает запросы только для своего домена
+            hosts += [h for h in ("127.0.0.1", "localhost") if h not in hosts]
+        return hosts
 
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
 
