@@ -106,6 +106,25 @@ async function api(method, path, body, opts = {}) {
   return data;
 }
 
+// Список PaginatedResponse с подгрузкой по offset: кнопка «Показать ещё» и первая страница
+async function offsetFeed(path, limit, renderRow, tbody) {
+  let offset = 0;
+  let total = 0;
+  const more = h("button", { class: "small" }, "Показать ещё");
+  const load = async () => {
+    const sep = path.includes("?") ? "&" : "?";
+    const page = await api("GET", `${path}${sep}limit=${limit}&offset=${offset}`);
+    page.items.forEach((item) => tbody.append(renderRow(item)));
+    offset += page.items.length;
+    total = page.total;
+    more.hidden = offset >= total || !page.items.length;
+    return page.items.length;
+  };
+  more.onclick = (e) => run(e.currentTarget, load);
+  const first = await load();
+  return { more, first, total: () => total };
+}
+
 // Лента с подгрузкой по курсору: возвращает кнопку «Показать ещё» и первую страницу
 async function cursorFeed(path, limit, renderRow, tbody) {
   let cursor = null;
@@ -485,7 +504,7 @@ async function campaignsView() {
         h("td", { class: "num" }, int(c.impressions_count)),
         h("td", { class: "num" }, int(c.clicks_count)),
         h("td", {}, campaignActions(c, reload)));
-  const feed = await cursorFeed("/campaigns/my", 50, row, rows);
+  const feed = await offsetFeed("/campaigns/my", 50, row, rows);
   const headers = ["Кампания", "Площадка", "Статус", { label: "Показы", num: 1 }, { label: "Клики", num: 1 }, "Действия"];
   add(wrap,
     h("div", { class: "row between" }, h("h1", {}, "Кампании"),
@@ -659,14 +678,14 @@ async function walletView() {
 
 // ---------- Админ: модерация ----------
 async function moderationView() {
-  const page = await api("GET", "/campaigns?status=moderation&limit=200", undefined, { page: true });
+  const page = await api("GET", "/campaigns?status=moderation&limit=200");
   const queue = page.items;
   const wrap = h("div");
   const reload = async () => wrap.replaceWith(await moderationView());
   add(wrap, h("h1", {}, "Модерация ",
-    queue.length ? h("span", { class: "badge count" }, page.hasMore ? "200+" : queue.length) : null),
-  page.hasMore ? h("div", { class: "notice info" },
-    "Показаны первые 200 заявок — после проверки обновите страницу, подгрузятся следующие.") : null);
+    page.total ? h("span", { class: "badge count" }, page.total) : null),
+  page.total > queue.length ? h("div", { class: "notice info" },
+    `Показаны первые ${queue.length} из ${page.total} заявок — после проверки обновите страницу.`) : null);
   if (!queue.length) {
     add(wrap, h("div", { class: "card empty" }, "Очередь пуста — все кампании проверены"));
     return wrap;

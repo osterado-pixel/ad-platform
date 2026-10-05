@@ -56,14 +56,24 @@ def test_admin_list_with_filter_and_owner(client, auth_headers, db, owner, place
     r = client.get(C, params={"status": "moderation"}, headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
-    assert [c["id"] for c in body] == [first.id, second.id]  # очередь — по порядку поступления
-    assert body[0]["owner_email"] == "owner@mail.ru"
-    assert body[0]["placement_name"] == "Шапка"
-    assert len(client.get(C, headers=auth_headers).json()) == 3
+    assert [c["id"] for c in body["items"]] == [first.id, second.id]  # очередь — по порядку поступления
+    assert body["total"] == 2
+    assert body["items"][0]["owner_email"] == "owner@mail.ru"
+    assert body["items"][0]["placement_name"] == "Шапка"
+    assert client.get(C, headers=auth_headers).json()["total"] == 3
 
 
-def test_advertiser_cannot_list_all(client, owner):
-    assert client.get(C, headers=bearer(owner)).status_code == 403
+def test_advertiser_lists_only_own(client, db, owner, placements):
+    a, _, _ = placements
+    mine = make(db, owner, a, title="Моя")
+    other = User(email="other@mail.ru", hashed_password="x")
+    db.add(other)
+    db.commit()
+    make(db, other, a, title="Чужая")
+    for url in (C, C + "/"):
+        body = client.get(url, headers=bearer(owner), params={"user_id": other.id}).json()
+        # user_id для рекламодателя игнорируется: чужие кампании не видны никак
+        assert [c["id"] for c in body["items"]] == [mine.id] and body["total"] == 1
 
 
 # --- Создание с датами ---

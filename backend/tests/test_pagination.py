@@ -44,16 +44,17 @@ def walk(client, url, headers, limit):
         params = {"limit": limit, "before_id": r.headers["x-next-before-id"]}
 
 
-def test_my_campaigns_cursor_walks_all_pages(client, owner, campaigns):
-    assert walk(client, "/api/v1/campaigns/my", bearer(owner), limit=3) == campaigns  # 3 + 3 + 1
-
-
-def test_my_campaigns_offset_and_has_more(client, owner, campaigns):
-    r = client.get("/api/v1/campaigns/my", params={"limit": 7}, headers=bearer(owner))
-    assert len(r.json()) == 7 and r.headers["x-has-more"] == "false"
-    r = client.get("/api/v1/campaigns/my", params={"limit": 2, "offset": 2}, headers=bearer(owner))
-    assert [c["id"] for c in r.json()] == campaigns[2:4]
-    assert r.headers["x-has-more"] == "true"
+@pytest.mark.parametrize("url", ["/api/v1/campaigns/my", "/api/v1/campaigns"])
+def test_my_campaigns_pages(client, owner, campaigns, url):
+    ids, offset = [], 0
+    while True:  # 3 + 3 + 1
+        body = client.get(url, params={"limit": 3, "offset": offset}, headers=bearer(owner)).json()
+        assert (body["total"], body["limit"], body["offset"]) == (7, 3, offset)
+        ids += [c["id"] for c in body["items"]]
+        offset += len(body["items"])
+        if offset >= body["total"]:
+            break
+    assert ids == campaigns  # новые сверху, без пропусков и повторов
 
 
 def test_default_limit_is_bounded(client, db, owner):
@@ -63,8 +64,8 @@ def test_default_limit_is_bounded(client, db, owner):
     db.add_all([Campaign(user_id=owner.id, placement_id=p.id, title=f"C{i}", target_url="https://a.ru/")
                 for i in range(55)])
     db.commit()
-    r = client.get("/api/v1/campaigns/my", headers=bearer(owner))
-    assert len(r.json()) == 50 and r.headers["x-has-more"] == "true"
+    body = client.get("/api/v1/campaigns/my", headers=bearer(owner)).json()
+    assert (len(body["items"]), body["total"], body["limit"]) == (10, 55, 10)
 
 
 def test_wallet_history_cursor(client, db, owner):
@@ -88,8 +89,8 @@ def test_cursor_validation(client, owner):
 
 
 def test_admin_lists_have_more(client, auth_headers, db, owner, campaigns):
-    r = client.get("/api/v1/campaigns", params={"limit": 5}, headers=auth_headers)
-    assert len(r.json()) == 5 and r.headers["x-has-more"] == "true"
+    body = client.get("/api/v1/campaigns", params={"limit": 5}, headers=auth_headers).json()
+    assert len(body["items"]) == 5 and body["total"] == 7
     r = client.get("/api/v1/users", params={"limit": 1}, headers=auth_headers)
     assert len(r.json()) == 1 and r.headers["x-has-more"] == "true"
 

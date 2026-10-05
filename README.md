@@ -140,19 +140,25 @@ const { access_token } = await fetch(`${API}/auth/login`, {
 const auth = { Authorization: `Bearer ${access_token}` };   // cookie не используются
 
 // Списки — постранично
-const r = await fetch(`${API}/campaigns/my?limit=50`, { headers: auth });
-const campaigns = await r.json();
-const hasMore = r.headers.get("X-Has-More") === "true";
-const next = r.headers.get("X-Next-Before-Id");             // → ?before_id=${next}
+const page = await fetch(`${API}/campaigns/my?limit=20&offset=0`, { headers: auth }).then((r) => r.json());
+// page = { items: [...], total: 42, limit: 20, offset: 0 } → следующая страница: offset=20
+
+const r = await fetch(`${API}/wallet/history?limit=50`, { headers: auth });   // длинная лента — курсор
+const next = r.headers.get("X-Has-More") === "true" ? r.headers.get("X-Next-Before-Id") : null;
 ```
 
-**Постраничная выдача.** Все списки ограничены: `limit` (по умолчанию 50), `offset` (не больше
-10 000). Для длинных лент (`/campaigns/my`, `/wallet/history`) — курсор `before_id` из заголовка
-`X-Next-Before-Id`: следующая страница берётся по индексу за одинаковое время на любой глубине.
-Признак «есть ещё» — заголовок `X-Has-More` (общее число не считается: `COUNT(*)` по миллионам
-строк на каждую страницу — лишняя нагрузка). В сводках `/stats/me` (он же `/analytics/summary`) и `/stats/platform` списки
-ограничены параметрами `campaigns_limit` / `placements_limit`, признак — `campaigns_has_more` /
-`placements_has_more`.
+**Постраничная выдача.** Все списки ограничены: `limit` (1–200, у площадок до 500), `offset` (до 10 000).
+
+- Кампании и площадки — объект `PaginatedResponse`:
+  `{"items": [...], "total": 42, "limit": 10, "offset": 0}`. `GET /campaigns` учитывает роль:
+  админ видит все кампании (фильтры `status`, `user_id`), рекламодатель — только свои
+  (то же, что `/campaigns/my`).
+- История кошелька `/wallet/history` (по записи на каждый клик — могут быть миллионы) — массив с
+  курсором: следующая страница по `?before_id=` из заголовка `X-Next-Before-Id`, признак «есть ещё» —
+  `X-Has-More`. Курсор берёт любую страницу по индексу за одинаковое время, а `COUNT(*)` по миллионам
+  строк на каждую страницу не считается.
+- Сводки `/stats/me` (он же `/analytics/summary`) и `/stats/platform`: списки ограничены
+  `campaigns_limit` / `placements_limit`, признак — `campaigns_has_more` / `placements_has_more`.
 
 **Заголовки безопасности** ставятся на все ответы: `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`; у API —

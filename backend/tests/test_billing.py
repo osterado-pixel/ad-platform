@@ -137,7 +137,7 @@ def test_clicks_count_in_my_campaigns(make_client, db, world):
     click(client, campaign)
     r = client.get("/api/v1/campaigns/my",
                    headers={"Authorization": f"Bearer {create_access_token(user.id)}"})
-    assert r.json()[0]["clicks_count"] == 1
+    assert r.json()["items"][0]["clicks_count"] == 1
 
 
 def test_cli_add_balance(db, world, monkeypatch):

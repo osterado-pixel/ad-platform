@@ -90,7 +90,8 @@ def test_my_campaigns_only_own_newest_first(client, db, placement):
 
     r = client.get(URL + "/my", headers=ha)
     assert r.status_code == 200
-    assert [c["title"] for c in r.json()] == ["Вторая", "Первая"]
+    assert [c["title"] for c in r.json()["items"]] == ["Вторая", "Первая"]
+    assert r.json()["total"] == 2
 
 
 def admin_headers(db):

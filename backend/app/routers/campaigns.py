@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import Campaign, CampaignStatus, Placement, User, UserRole
-from app.pagination import before_id_param, fetch_page, limit_param, offset_param
+from app.pagination import fetch_page_with_total, limit_param, offset_param
 from app.schemas import (
     CampaignAdminResponse, CampaignCreate, CampaignModerate, CampaignResponse, CampaignUpdate,
+    PaginatedResponse,
 )
 
 router = APIRouter(prefix="/api/v1/campaigns", tags=["Рекламные кампании"])
@@ -50,41 +51,40 @@ def _require_active_placement(db: Session, placement_id: int) -> None:
         )
 
 
-# --- Все кампании (для админа): очередь модерации и поиск ---
-@router.get("", response_model=list[CampaignAdminResponse])
+# --- Список кампаний: админ — все (очередь модерации, поиск), рекламодатель — свои ---
+@router.get("", response_model=PaginatedResponse[CampaignAdminResponse])
+@router.get("/", response_model=PaginatedResponse[CampaignAdminResponse], include_in_schema=False)
 def list_campaigns(
-    response: Response,
     status_filter: CampaignStatus | None = Query(default=None, alias="status"),
-    user_id: int | None = None,
-    limit: int = limit_param(),
+    user_id: int | None = Query(default=None, description="Только для админа: кампании пользователя"),
+    limit: int = limit_param(default=10),
     offset: int = offset_param(),
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    query = select(Campaign).options(selectinload(Campaign.owner), selectinload(Campaign.placement))
-    if status_filter is not None:
-        query = query.where(Campaign.status == status_filter)
-    if user_id is not None:
-        query = query.where(Campaign.user_id == user_id)
-    # Очередь модерации — по порядку поступления, остальное — новые сверху
-    order = Campaign.id.asc() if status_filter == CampaignStatus.MODERATION else Campaign.id.desc()
-    return fetch_page(db, query.order_by(order), response, limit, offset)
-
-
-@router.get("/my", response_model=list[CampaignResponse])
-def get_my_campaigns(
-    response: Response,
-    limit: int = limit_param(),
-    offset: int = offset_param(),
-    before_id: int | None = before_id_param(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Кампании текущего пользователя, новые сверху, постранично
-    query = select(Campaign).where(Campaign.user_id == current_user.id)
-    if before_id is not None:
-        query = query.where(Campaign.id < before_id)
-    return fetch_page(db, query.order_by(Campaign.id.desc()), response, limit, offset, cursor_attr="id")
+    query = select(Campaign).options(selectinload(Campaign.owner), selectinload(Campaign.placement))
+    if current_user.role != UserRole.ADMIN:
+        query = query.where(Campaign.user_id == current_user.id)  # чужие кампании не видны
+    elif user_id is not None:
+        query = query.where(Campaign.user_id == user_id)
+    if status_filter is not None:
+        query = query.where(Campaign.status == status_filter)
+    # Очередь модерации — по порядку поступления, остальное — новые сверху
+    order = Campaign.id.asc() if status_filter == CampaignStatus.MODERATION else Campaign.id.desc()
+    return fetch_page_with_total(db, query.order_by(order), limit, offset)
+
+
+@router.get("/my", response_model=PaginatedResponse[CampaignResponse])
+def get_my_campaigns(
+    limit: int = limit_param(default=10),
+    offset: int = offset_param(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Кампании текущего пользователя, новые сверху. Сортировка обязательна:
+    # без неё база может менять порядок строк, и страницы «перемешаются»
+    query = select(Campaign).where(Campaign.user_id == current_user.id).order_by(Campaign.id.desc())
+    return fetch_page_with_total(db, query, limit, offset)
 
 
 def _get_campaign_for_update(db: Session, campaign_id: int, user_id: int | None = None) -> Campaign:
