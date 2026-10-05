@@ -11,9 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db, write_lock
-from app.models import (
-    Campaign, CampaignStatus, Click, Placement, Transaction, TransactionType, User,
-)
+from app.ledger import add_transaction
+from app.models import Campaign, CampaignStatus, Click, Placement, TransactionType, User
 from app.schemas import AdResponse
 from app.stats import bump_daily
 
@@ -189,12 +188,12 @@ def _charge_click(db: Session, request: Request, campaign) -> bool:
         # 5. Дневная статистика и запись в журнал — в той же транзакции БД, что и списание
         bump_daily(db, campaign.id, clicks=1, spend=price)
         if price > 0:
-            db.add(Transaction(
-                user_id=campaign.user_id, amount=price, type=TransactionType.CLICK_SPEND,
+            add_transaction(
+                db, user_id=campaign.user_id, amount=price, type=TransactionType.CLICK_SPEND,
                 campaign_id=campaign.id,
                 # description — String(255), а title может быть до 255 символов: обрезаем
                 description=f"Списание за клик по кампании #{campaign.id} ({campaign.title})"[:255],
-            ))
+            )
         db.commit()
         return True
 

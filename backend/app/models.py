@@ -52,6 +52,8 @@ class User(Base):
         _enum(UserRole, "user_role"), default=UserRole.ADVERTISER,
         server_default=UserRole.ADVERTISER.value)
     balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    # Число записей в журнале транзакций — total для истории без COUNT(*) (см. app/ledger.py)
+    transactions_count: Mapped[int] = mapped_column(default=0, server_default="0")
     # Версия токенов: смена пароля увеличивает её, и все ранее выданные токены перестают действовать
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(

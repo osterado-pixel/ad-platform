@@ -98,7 +98,7 @@ async function api(method, path, body, opts = {}) {
   if (opts.page) {
     // Список постранично: X-Has-More — есть ли ещё, X-Next-Before-Id — курсор следующей страницы
     return {
-      items: data,
+      items: Array.isArray(data) ? data : data.items,
       hasMore: response.headers.get("X-Has-More") === "true",
       next: response.headers.get("X-Next-Before-Id"),
     };
@@ -131,7 +131,8 @@ async function cursorFeed(path, limit, renderRow, tbody) {
   const more = h("button", { class: "small" }, "Показать ещё");
   const load = async () => {
     const sep = path.includes("?") ? "&" : "?";
-    const page = await api("GET", `${path}${sep}limit=${limit}${cursor ? "&before_id=" + cursor : ""}`, undefined, { page: true });
+    const page = await api("GET", `${path}${sep}limit=${limit}${cursor ? "&before_id=" + cursor : ""}`,
+      undefined, { page: true });
     page.items.forEach((item) => tbody.append(renderRow(item)));
     cursor = page.next;
     more.hidden = !page.hasMore;

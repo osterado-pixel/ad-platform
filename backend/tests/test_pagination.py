@@ -37,7 +37,8 @@ def walk(client, url, headers, limit):
     while True:
         r = client.get(url, params=params, headers=headers)
         assert r.status_code == 200
-        ids += [x["id"] for x in r.json()]
+        body = r.json()
+        ids += [x["id"] for x in (body["items"] if isinstance(body, dict) else body)]
         if r.headers["x-has-more"] == "false":
             assert "x-next-before-id" not in r.headers
             return ids
@@ -69,11 +70,15 @@ def test_default_limit_is_bounded(client, db, owner):
 
 
 def test_wallet_history_cursor(client, db, owner):
-    db.add_all([Transaction(user_id=owner.id, amount=Decimal(i + 1), type=TransactionType.DEPOSIT)
-                for i in range(5)])
+    from app.ledger import add_transaction
+    for i in range(5):
+        add_transaction(db, user_id=owner.id, amount=Decimal(i + 1), type=TransactionType.DEPOSIT)
     db.commit()
     ids = walk(client, "/api/v1/wallet/history", bearer(owner), limit=2)
     assert ids == sorted(ids, reverse=True) and len(ids) == 5 and len(set(ids)) == 5
+    # total — во всех страницах общий, и с курсором тоже
+    r = client.get("/api/v1/wallet/history", params={"limit": 2, "before_id": ids[1]}, headers=bearer(owner))
+    assert [t["id"] for t in r.json()["items"]] == ids[2:4] and r.json()["total"] == 5
 
 
 @pytest.mark.parametrize("url", ["/api/v1/campaigns/my", "/api/v1/wallet/history", "/api/v1/users",

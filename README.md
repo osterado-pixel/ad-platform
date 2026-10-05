@@ -143,8 +143,9 @@ const auth = { Authorization: `Bearer ${access_token}` };   // cookie не ис�
 const page = await fetch(`${API}/campaigns/my?limit=20&offset=0`, { headers: auth }).then((r) => r.json());
 // page = { items: [...], total: 42, limit: 20, offset: 0 } → следующая страница: offset=20
 
-const r = await fetch(`${API}/wallet/history?limit=50`, { headers: auth });   // длинная лента — курсор
-const next = r.headers.get("X-Has-More") === "true" ? r.headers.get("X-Next-Before-Id") : null;
+const r = await fetch(`${API}/wallet/history?limit=50`, { headers: auth });
+const { items, total } = await r.json();
+// глубже 10 000 записей — курсором: ?before_id=${r.headers.get("X-Next-Before-Id")}
 ```
 
 **Постраничная выдача.** Все списки ограничены: `limit` (1–200, у площадок до 500), `offset` (до 10 000).
@@ -153,10 +154,11 @@ const next = r.headers.get("X-Has-More") === "true" ? r.headers.get("X-Next-Befo
   `{"items": [...], "total": 42, "limit": 10, "offset": 0}`. `GET /campaigns` учитывает роль:
   админ видит все кампании (фильтры `status`, `user_id`), рекламодатель — только свои
   (то же, что `/campaigns/my`).
-- История кошелька `/wallet/history` (по записи на каждый клик — могут быть миллионы) — массив с
-  курсором: следующая страница по `?before_id=` из заголовка `X-Next-Before-Id`, признак «есть ещё» —
-  `X-Has-More`. Курсор берёт любую страницу по индексу за одинаковое время, а `COUNT(*)` по миллионам
-  строк на каждую страницу не считается.
+- История кошелька `/wallet/history` (по записи на каждый клик — могут быть миллионы) — тоже
+  `PaginatedResponse`, но рассчитана на большой объём: сортировка по `id` по индексу (страница ~1 мс
+  при 900 тыс. записей; сортировка по времени — ~230 мс), `total` — из счётчика пользователя, без
+  `COUNT(*)`. Для прокрутки дальше 10 000 записей — курсор `?before_id=` из заголовка
+  `X-Next-Before-Id` (признак «есть ещё» — `X-Has-More`).
 - Сводки `/stats/me` (он же `/analytics/summary`) и `/stats/platform`: списки ограничены
   `campaigns_limit` / `placements_limit`, признак — `campaigns_has_more` / `placements_has_more`.
 

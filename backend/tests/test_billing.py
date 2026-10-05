@@ -9,7 +9,7 @@ from app import cli
 from app.database import get_db
 from app.main import app
 from app.models import (
-    Campaign, CampaignStatus, Click, Placement, Transaction, TransactionType, User,
+    Campaign, CampaignStatus, Click, Placement, Transaction, TransactionType, User, UserRole,
 )
 from app.routers import ads
 
@@ -346,3 +346,25 @@ def test_cli_backup_db(tmp_path, monkeypatch):
         assert con.execute("select x from t").fetchone() == (42,)
     finally:
         con.close()
+
+
+def test_transactions_counter_matches_ledger(make_client, db, world, monkeypatch):
+    """users.transactions_count (total истории) == реальное число записей после всех видов операций."""
+    from sqlalchemy import func, select
+    user, _, campaign = world
+    monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    assert cli.add_balance("a@mail.ru", "10") == 0                      # CLI
+    for i in range(4):
+        click(make_client(f"10.0.0.{i}"), campaign)                     # клики (оплачены 4 из 4)
+    click(make_client("10.0.0.0"), campaign)                            # повтор — без записи
+    click(make_client(ua="Googlebot"), campaign)                        # бот — без записи
+    from app.auth import create_access_token
+    admin = User(email="adm@mail.ru", hashed_password="x", role=UserRole.ADMIN)
+    db.add(admin)
+    db.commit()
+    make_client().post("/api/v1/wallet/deposit", params={"user_id": user.id}, json={"amount": 5},
+                       headers={"Authorization": f"Bearer {create_access_token(admin.id)}"})  # API
+    db.expire_all()
+    real = db.scalar(select(func.count()).select_from(Transaction).where(Transaction.user_id == user.id))
+    assert real == 6
+    assert db.get(User, user.id).transactions_count == real

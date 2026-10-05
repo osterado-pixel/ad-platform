@@ -95,7 +95,8 @@ def test_full_financial_and_ad_lifecycle(client, auth_headers):
     # 8. История транзакций (Ledger): 1 deposit и 2 click_spend, новые сверху
     history_resp = client.get("/api/v1/wallet/history", headers=auth_headers)
     assert history_resp.status_code == 200
-    history = history_resp.json()
+    history = history_resp.json()["items"]
+    assert history_resp.json()["total"] == 3
     assert [t["type"] for t in history] == [
         TransactionType.CLICK_SPEND, TransactionType.CLICK_SPEND, TransactionType.DEPOSIT,
     ]

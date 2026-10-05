@@ -16,7 +16,8 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import delete, select, update
 
 from app.database import SessionLocal
-from app.models import AuthAttempt, Click, Transaction, TransactionType, User, UserRole
+from app.ledger import add_transaction
+from app.models import AuthAttempt, Click, TransactionType, User, UserRole
 
 
 def create_admin(email: str, password: str) -> int:
@@ -76,8 +77,8 @@ def add_balance(email: str, amount: str) -> int:
         if user_id is None:
             print(f"Пользователь {email} не найден")
             return 1
-        db.add(Transaction(user_id=user_id, amount=value, type=TransactionType.DEPOSIT,
-                           description="Пополнение администратором (CLI)"))
+        add_transaction(db, user_id=user_id, amount=value, type=TransactionType.DEPOSIT,
+                        description="Пополнение администратором (CLI)")
         db.commit()
         balance = db.get(User, user_id).balance
     print(f"Баланс {email} пополнен на {value}, теперь {balance}")

@@ -82,15 +82,17 @@ def test_deposit_does_not_resume_paused_campaigns(client, db):
 def test_history_own_only_newest_first_paginated(client, db):
     a, ha = make_user(db, "a@mail.ru")
     b, _ = make_user(db, "b@mail.ru")
-    for i, amount in enumerate(["1", "2", "3"]):
-        db.add(Transaction(user_id=a.id, amount=Decimal(amount), type=TransactionType.DEPOSIT))
-    db.add(Transaction(user_id=b.id, amount=Decimal("99"), type=TransactionType.DEPOSIT))
+    from app.ledger import add_transaction
+    for amount in ["1", "2", "3"]:
+        add_transaction(db, user_id=a.id, amount=Decimal(amount), type=TransactionType.DEPOSIT)
+    add_transaction(db, user_id=b.id, amount=Decimal("99"), type=TransactionType.DEPOSIT)
     db.commit()
 
-    r = client.get(f"{W}/history", headers=ha)
-    assert [t["amount"] for t in r.json()] == [3.0, 2.0, 1.0]
-    r = client.get(f"{W}/history", params={"limit": 1, "offset": 1}, headers=ha)
-    assert [t["amount"] for t in r.json()] == [2.0]
+    body = client.get(f"{W}/history", headers=ha).json()
+    assert [t["amount"] for t in body["items"]] == [3.0, 2.0, 1.0]
+    assert (body["total"], body["limit"], body["offset"]) == (3, 20, 0)  # чужая операция не считается
+    body = client.get(f"{W}/history", params={"limit": 1, "offset": 1}, headers=ha).json()
+    assert [t["amount"] for t in body["items"]] == [2.0] and body["total"] == 3
     assert client.get(f"{W}/history", params={"limit": 0}, headers=ha).status_code == 422
 
 
