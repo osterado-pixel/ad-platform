@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.auth import require_admin
 from app.database import get_db
 from app.models import Placement, User
-from app.pagination import fetch_page, limit_param, offset_param
-from app.schemas import PlacementCreate, PlacementResponse, PlacementUpdate
+from app.pagination import fetch_page_with_total, limit_param, offset_param
+from app.schemas import PaginatedResponse, PlacementCreate, PlacementResponse, PlacementUpdate
 
 router = APIRouter(prefix="/api/v1/placements", tags=["Рекламные места"])
 
@@ -40,29 +40,29 @@ def create_placement(
     return new_placement
 
 
-@router.get("", response_model=list[PlacementResponse])
-@router.get("/", response_model=list[PlacementResponse], include_in_schema=False)
+@router.get("", response_model=PaginatedResponse[PlacementResponse])
+@router.get("/", response_model=PaginatedResponse[PlacementResponse], include_in_schema=False)
 def get_placements(
-    response: Response,
-    limit: int = limit_param(default=200, maximum=500),
+    limit: int = limit_param(default=10, maximum=500),
     offset: int = offset_param(),
     db: Session = Depends(get_db),
 ):
-    # Публичный список активных рекламных мест
+    # Публичный список: только активные площадки. Сортировка по id обязательна —
+    # без неё база может отдавать строки в разном порядке, и страницы «перемешаются»
     query = select(Placement).where(Placement.is_active.is_(True)).order_by(Placement.id)
-    return fetch_page(db, query, response, limit, offset)
+    return fetch_page_with_total(db, query, limit, offset)
 
 
 # --- Все площадки, включая отключённые (для админа) ---
-@router.get("/all", response_model=list[PlacementResponse])
+@router.get("/all", response_model=PaginatedResponse[PlacementResponse])
 def get_all_placements(
-    response: Response,
-    limit: int = limit_param(default=200, maximum=500),
+    limit: int = limit_param(default=10, maximum=500),
     offset: int = offset_param(),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    return fetch_page(db, select(Placement).order_by(Placement.id), response, limit, offset)
+    # Все площадки, включая отключённые (для админа)
+    return fetch_page_with_total(db, select(Placement).order_by(Placement.id), limit, offset)
 
 
 # --- Изменение площадки: название, цены, включение/отключение ---

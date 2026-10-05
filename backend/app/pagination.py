@@ -10,7 +10,7 @@
 X-Next-Before-Id): считать COUNT(*) по миллионам строк на каждую страницу — тоже нагрузка.
 """
 from fastapi import Query, Response
-from sqlalchemy import Select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 MAX_OFFSET = 10_000
@@ -43,3 +43,14 @@ def fetch_page(db: Session, stmt: Select, response: Response, limit: int, offset
     if has_more and cursor_attr and rows:
         response.headers["X-Next-Before-Id"] = str(getattr(rows[-1], cursor_attr))
     return rows
+
+
+def fetch_page_with_total(db: Session, stmt: Select, limit: int, offset: int) -> dict:
+    """Страница + общее число записей — для PaginatedResponse.
+
+    COUNT(*) выполняется на каждый запрос, поэтому только для небольших таблиц
+    (площадки и т.п.). Для длинных лент — fetch_page с курсором.
+    """
+    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    items = db.scalars(stmt.limit(limit).offset(offset)).all()
+    return {"items": items, "total": total, "limit": limit, "offset": offset}

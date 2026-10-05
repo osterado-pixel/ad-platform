@@ -246,9 +246,9 @@ def test_deactivate_placement_stops_serving(client, auth_headers, db, owner, pla
     assert client.get(SERVE, params={"placement_code": "header"}).status_code == 200
     client.patch(f"/api/v1/placements/{a.id}", headers=auth_headers, json={"is_active": False})
     assert client.get(SERVE, params={"placement_code": "header"}).status_code == 404
-    public = [p["code_identifier"] for p in client.get("/api/v1/placements").json()]
+    public = [p["code_identifier"] for p in client.get("/api/v1/placements").json()["items"]]
     assert "header" not in public
-    every = [p["code_identifier"] for p in client.get("/api/v1/placements/all", headers=auth_headers).json()]
+    every = [p["code_identifier"] for p in client.get("/api/v1/placements/all", headers=auth_headers).json()["items"]]
     assert every == ["header", "footer", "off"]
 
 

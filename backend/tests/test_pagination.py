@@ -97,10 +97,24 @@ def test_admin_lists_have_more(client, auth_headers, db, owner, campaigns):
 def test_placements_paginated(client, auth_headers, db):
     db.add_all([Placement(name=f"P{i}", code_identifier=f"p{i}", is_active=i % 2 == 0) for i in range(6)])
     db.commit()
-    r = client.get("/api/v1/placements", params={"limit": 2})
-    assert [p["code_identifier"] for p in r.json()] == ["p0", "p2"] and r.headers["x-has-more"] == "true"
-    r = client.get("/api/v1/placements/all", params={"limit": 6}, headers=auth_headers)
-    assert len(r.json()) == 6 and r.headers["x-has-more"] == "false"
+    # Публичный список: только активные (p0, p2, p4), по порядку, с общим числом
+    body = client.get("/api/v1/placements", params={"limit": 2}).json()
+    assert [p["code_identifier"] for p in body["items"]] == ["p0", "p2"]
+    assert (body["total"], body["limit"], body["offset"]) == (3, 2, 0)
+    body = client.get("/api/v1/placements", params={"limit": 2, "offset": 2}).json()
+    assert [p["code_identifier"] for p in body["items"]] == ["p4"] and body["total"] == 3
+    # Админский — все 6, включая отключённые
+    body = client.get("/api/v1/placements/all", params={"limit": 4, "offset": 4}, headers=auth_headers).json()
+    assert [p["code_identifier"] for p in body["items"]] == ["p4", "p5"] and body["total"] == 6
+
+
+def test_placements_default_page_size(client, db):
+    db.add_all([Placement(name=f"P{i}", code_identifier=f"p{i}") for i in range(12)])
+    db.commit()
+    body = client.get("/api/v1/placements").json()
+    assert (len(body["items"]), body["total"], body["limit"]) == (10, 12, 10)
+    # Деньги в элементах — числом, как во всём API
+    assert body["items"][0]["price_per_click"] == 0.0
 
 
 def test_stats_lists_bounded(client, auth_headers, owner, campaigns):

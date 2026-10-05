@@ -242,7 +242,7 @@ def test_campaigns_load_more(server, browser):
     httpx.post(base + "/api/v1/auth/register", json={"email": "many@e2e.ru", "password": PASSWORD})
     token = httpx.post(base + "/api/v1/auth/login",
                        data={"username": "many@e2e.ru", "password": PASSWORD}).json()["access_token"]
-    pid = httpx.get(base + "/api/v1/placements").json()[0]["id"]
+    pid = httpx.get(base + "/api/v1/placements").json()["items"][0]["id"]
     with httpx.Client(headers={"Authorization": f"Bearer {token}"}) as c:
         for i in range(55):
             assert c.post(base + "/api/v1/campaigns", json={

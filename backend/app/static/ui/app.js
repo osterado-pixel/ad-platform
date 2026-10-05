@@ -241,7 +241,7 @@ function adPreview(c) {
 }
 
 async function loadPlacements(force) {
-  if (!state.placements || force) state.placements = await api("GET", "/placements");
+  if (!state.placements || force) state.placements = (await api("GET", "/placements?limit=500")).items;
   return state.placements;
 }
 
@@ -702,7 +702,7 @@ function embedCode(code) {
 }
 
 async function placementsView() {
-  const list = await api("GET", "/placements/all");
+  const list = (await api("GET", "/placements/all?limit=500")).items;
   const wrap = h("div");
   const reload = async () => { state.placements = null; wrap.replaceWith(await placementsView()); };
 

@@ -73,7 +73,8 @@ def test_public_list_only_active(client, db):
     for url in (URL, URL + "/"):
         r = client.get(url, follow_redirects=False)
         assert r.status_code == 200
-        assert [p["code_identifier"] for p in r.json()] == ["b", "a"]
+        assert [p["code_identifier"] for p in r.json()["items"]] == ["b", "a"]
+        assert r.json()["total"] == 2  # отключённая площадка не считается
 
 
 def test_make_admin_cli(db, monkeypatch, capsys):
