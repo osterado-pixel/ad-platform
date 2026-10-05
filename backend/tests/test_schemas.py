@@ -179,3 +179,19 @@ def test_transaction_response_from_orm():
 
 def test_wallet_balance_response():
     assert WalletBalanceResponse(balance=Decimal("95.00")).model_dump(mode="json") == {"balance": 95.0}
+
+
+def test_paginated_response_generic():
+    from app.schemas import PaginatedResponse
+    page = PaginatedResponse[TransactionResponse].model_validate({
+        "items": [{"id": 1, "user_id": 2, "amount": "5.00", "type": "deposit",
+                   "created_at": "2026-10-05T12:00:00Z"}],
+        "total": 41, "limit": 20, "offset": 20,
+    })
+    assert isinstance(page.items[0], TransactionResponse)
+    assert page.model_dump(mode="json")["items"][0]["amount"] == 5.0  # деньги — числом, как везде
+    schema = PaginatedResponse[TransactionResponse].model_json_schema()
+    assert schema["properties"]["items"]["items"]["$ref"].endswith("TransactionResponse")
+    for bad in [{"total": -1}, {"limit": 0}, {"offset": -5}]:
+        with pytest.raises(ValidationError):
+            PaginatedResponse[TransactionResponse].model_validate({"items": [], "total": 0, "limit": 20, "offset": 0, **bad})

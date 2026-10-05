@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import (
     AfterValidator, BaseModel, ConfigDict, EmailStr, Field, HttpUrl, PlainSerializer, TypeAdapter,
@@ -350,3 +350,15 @@ AnalyticsTotals = Totals
 DailyAnalytics = DayStat
 CampaignAnalyticsItem = CampaignTotals
 AnalyticsSummaryResponse = MyStats
+
+
+# --- Универсальный контейнер постраничной выдачи ---
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Страница списка: PaginatedResponse[CampaignResponse] и т.п."""
+    items: list[T]
+    total: int = Field(..., ge=0, description="Общее количество записей в базе")
+    limit: int = Field(..., ge=1, description="Размер страницы")
+    offset: int = Field(..., ge=0, description="Смещение")
