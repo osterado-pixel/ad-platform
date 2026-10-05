@@ -1,11 +1,12 @@
 # Что не копировать в образ (COPY . .)
 
-# Кеш Python
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache
+# Кеш Python. "**/" обязателен: в .dockerignore, в отличие от .gitignore, шаблон без него
+# срабатывает только в корне, и app/__pycache__ попал бы в образ
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
 
 # Виртуальные окружения
 .venv
