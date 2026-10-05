@@ -9,3 +9,5 @@ __pycache__/
 .pytest_cache/
 .venv/
 backups/
+# Сгенерированный ключ подписи токенов (app/config.py)
+backend/data/

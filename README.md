@@ -36,8 +36,13 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 cd backend
 cp .env.example .env     # заполните POSTGRES_PASSWORD и SECRET_KEY (случайные!)
 docker compose up -d --build
-docker compose exec web python -m app.cli create-admin admin@example.com
+docker compose exec api python -m app.cli create-admin admin@example.com
 ```
+
+Если `.env` нет, запуск не падает: у всех переменных есть значения по умолчанию, а вместо
+`SECRET_KEY` приложение генерирует случайный ключ и хранит его в томе `app_data` (у каждой
+установки свой, переживает перезапуск). Для сервера, открытого в интернет, задайте свои
+`POSTGRES_PASSWORD` и `SECRET_KEY` — или используйте вариант из корня проекта, где это обязательно.
 
 Приложение ждёт готовности PostgreSQL и само применяет миграции. Данные — в томе `postgres_data`,
 переживают пересоздание контейнеров. База доступна только с этого компьютера:

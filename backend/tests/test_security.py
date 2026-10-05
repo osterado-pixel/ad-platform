@@ -86,3 +86,45 @@ def test_allowed_hosts_keeps_internal_addresses():
     s = Settings(secret_key="x" * 32, allowed_hosts="ads.example.com")
     assert s.allowed_host_list == ["ads.example.com", "127.0.0.1", "localhost"]
     assert Settings(secret_key="x" * 32, allowed_hosts="*").allowed_host_list == ["*"]
+
+
+def test_secret_key_generated_and_persisted_when_missing(tmp_path, monkeypatch):
+    """Без SECRET_KEY платформа не падает: генерирует случайный ключ и хранит его в DATA_DIR."""
+    from app import config
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    first = config.Settings(_env_file=None, secret_key="").secret_key
+    assert len(first) >= 32
+    assert "super_secret" not in first and first != config.Settings(_env_file=None, secret_key="x" * 32).secret_key
+    # после «перезапуска» — тот же ключ (иначе все вышли бы из системы)
+    assert config.Settings(_env_file=None, secret_key="").secret_key == first
+    assert (tmp_path / "secret_key").read_text(encoding="utf-8") == first
+    # у другой установки — другой
+    other = tmp_path / "other"
+    monkeypatch.setattr(config, "DATA_DIR", other)
+    assert config.Settings(_env_file=None, secret_key="").secret_key != first
+
+
+def test_short_secret_key_rejected():
+    from pydantic import ValidationError
+    from app.config import Settings
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, secret_key="short")
+
+
+def test_algorithm_alias(monkeypatch):
+    from app.config import Settings
+    monkeypatch.setenv("ALGORITHM", "HS512")
+    monkeypatch.delenv("JWT_ALGORITHM", raising=False)
+    assert Settings(_env_file=None, secret_key="x" * 32).jwt_algorithm == "HS512"
+
+
+def test_secret_key_same_for_concurrent_workers(tmp_path, monkeypatch):
+    """Процессы сервера, стартующие одновременно, получают один и тот же ключ."""
+    from concurrent.futures import ThreadPoolExecutor
+    from app import config
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    with ThreadPoolExecutor(8) as ex:
+        keys = set(ex.map(lambda _: config._load_or_create_secret_key(), range(32)))
+    assert len(keys) == 1
+    assert [p.name for p in tmp_path.iterdir()] == ["secret_key"]  # временные файлы убраны

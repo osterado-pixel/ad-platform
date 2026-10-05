@@ -27,3 +27,5 @@ backups
 .git
 .gitignore
 tests
+# Сгенерированный ключ подписи токенов (app/config.py)
+data

@@ -1,9 +1,41 @@
+import os
+import secrets
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+# Служебные данные приложения (сгенерированный ключ). В Docker — том /app/data
+DATA_DIR = Path(os.environ.get("DATA_DIR") or BASE_DIR / "data")
+
+
+def _load_or_create_secret_key() -> str:
+    """Ключ из DATA_DIR/secret_key; при первом запуске — случайный, сохраняется туда же.
+
+    Страховка на случай потери .env: платформа не падает и не переходит на известный всем
+    ключ из примеров — у каждой установки свой, и после перезапуска он тот же.
+    """
+    path = DATA_DIR / "secret_key"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Пишем во временный файл и атомарно «публикуем» через os.link: если несколько процессов
+    # сервера стартуют одновременно, ключ создаст первый, остальные прочитают его же
+    # (иначе у процессов были бы разные ключи и токены «терялись» бы между ними)
+    tmp = path.with_name(f".secret_key.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    tmp.write_text(secrets.token_urlsafe(48), encoding="utf-8")
+    try:
+        tmp.chmod(0o600)  # читать может только владелец (на Windows игнорируется)
+    except OSError:
+        pass
+    try:
+        os.link(tmp, path)
+    except FileExistsError:
+        pass  # другой процесс успел первым — берём его ключ
+    finally:
+        tmp.unlink(missing_ok=True)
+    return path.read_text(encoding="utf-8").strip()
 
 
 class Settings(BaseSettings):
@@ -12,9 +44,11 @@ class Settings(BaseSettings):
     # DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/ad_db
     database_url: str = f"sqlite:///{(BASE_DIR / 'app.db').as_posix()}"
 
-    # Обязателен: задаётся в backend/.env (SECRET_KEY=...), в коде не хранится
-    secret_key: str = Field(min_length=32)
-    jwt_algorithm: str = "HS256"
+    # Ключ подписи токенов: из SECRET_KEY (backend/.env), а если не задан — сгенерированный
+    # и сохранённый в DATA_DIR/secret_key. В коде и примерах ключ не хранится
+    secret_key: str = ""
+    # ALGORITHM — имя из учебной инструкции, то же самое
+    jwt_algorithm: str = Field(default="HS256", validation_alias=AliasChoices("JWT_ALGORITHM", "ALGORITHM"))
     access_token_expire_minutes: int = 60 * 24  # Токен валиден 24 часа
     # Стоимость bcrypt: 12 ≈ 0.25 с на хеш — защита от перебора. В тестах ставим 4
     bcrypt_rounds: int = Field(default=12, ge=4, le=16)
@@ -53,7 +87,15 @@ class Settings(BaseSettings):
             hosts += [h for h in ("127.0.0.1", "localhost") if h not in hosts]
         return hosts
 
-    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore", populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _secret_key(self) -> "Settings":
+        if not self.secret_key.strip():
+            self.secret_key = _load_or_create_secret_key()
+        if len(self.secret_key) < 32:
+            raise ValueError("SECRET_KEY должен быть не короче 32 символов")
+        return self
 
 
 settings = Settings()
