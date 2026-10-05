@@ -132,3 +132,31 @@ def test_stats_lists_bounded(client, auth_headers, owner, campaigns):
     assert client.get("/api/v1/stats/me", params={"campaigns_limit": 501}, headers=bearer(owner)).status_code == 422
     body = client.get("/api/v1/stats/platform", params={"placements_limit": 1}, headers=auth_headers).json()
     assert len(body["placements"]) == 1 and body["placements_has_more"] is False
+
+
+def test_wallet_history_pagination(client, auth_headers):
+    # Пополняем кошелек 5 раз, чтобы создать 5 транзакций
+    for _ in range(5):
+        client.post("/api/v1/wallet/deposit", json={"amount": 10.0}, headers=auth_headers)
+
+    # Запрашиваем страницу 1 (limit=2, offset=0)
+    page1 = client.get("/api/v1/wallet/history?limit=2&offset=0", headers=auth_headers)
+    assert page1.status_code == 200
+    data1 = page1.json()
+    assert data1["total"] == 5
+    assert len(data1["items"]) == 2
+    assert data1["limit"] == 2
+    assert data1["offset"] == 0
+
+    # Запрашиваем страницу 2 (limit=2, offset=2)
+    page2 = client.get("/api/v1/wallet/history?limit=2&offset=2", headers=auth_headers)
+    assert page2.status_code == 200
+    data2 = page2.json()
+    assert len(data2["items"]) == 2
+    assert data2["offset"] == 2
+
+    # Страница 3 — оставшаяся запись; страницы не пересекаются и идут новыми сверху
+    data3 = client.get("/api/v1/wallet/history?limit=2&offset=4", headers=auth_headers).json()
+    assert len(data3["items"]) == 1
+    ids = [t["id"] for d in (data1, data2, data3) for t in d["items"]]
+    assert len(set(ids)) == 5 and ids == sorted(ids, reverse=True)
