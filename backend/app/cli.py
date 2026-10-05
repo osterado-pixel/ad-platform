@@ -1,6 +1,6 @@
 """Служебные команды. Запуск из папки backend/:
 
-    python -m app.cli create-admin admin@mail.ru            # спросит пароль
+    python -m app.cli create-admin admin@mail.ru            # новому — спросит пароль дважды
     python -m app.cli make-admin user@mail.ru
     python -m app.cli add-balance user@mail.ru 1000
     python -m app.cli set-password user@mail.ru         # сброс забытого пароля (спросит новый)
@@ -20,30 +20,62 @@ from app.ledger import add_transaction
 from app.models import AuthAttempt, Click, TransactionType, User, UserRole
 
 
-def create_admin(email: str, password: str) -> int:
-    """Создаёт администратора (или назначает админом и меняет пароль существующему)."""
+def ask_password(prompt: str = "Пароль: ") -> str | None:
+    """Спрашивает пароль дважды (ввод не отображается). None — если не совпали."""
+    password = getpass.getpass(prompt)
+    if password != getpass.getpass("Повторите пароль: "):
+        print("❌ Пароли не совпадают!")
+        return None
+    return password
+
+
+def _validate(email: str, password: str):
+    """Те же правила, что при регистрации: email и длина пароля. None — ошибка уже напечатана."""
     from pydantic import ValidationError
 
-    from app.auth import get_password_hash
     from app.schemas import UserCreate
 
     try:
-        data = UserCreate(email=email, password=password)  # те же правила, что при регистрации
+        return UserCreate(email=email, password=password)
     except ValidationError as e:
-        print("Ошибка:", "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()))
+        print("❌ Ошибка:", "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()))
+        return None
+
+
+def create_admin(email: str, password: str | None = None, ask=ask_password) -> int:
+    """Создаёт нового администратора или повышает существующего пользователя.
+
+    Существующему пользователю пароль не меняется (для этого — set-password).
+    Новому — пароль из аргумента/ADMIN_PASSWORD, иначе спрашивается дважды.
+    """
+    from app.auth import get_password_hash
+
+    lookup = _validate(email, "x" * 8)  # проверить и нормализовать email (регистр)
+    if lookup is None:
         return 1
     with SessionLocal() as db:
-        user = db.scalar(select(User).where(User.email == data.email))
-        if user is None:
-            db.add(User(email=data.email, hashed_password=get_password_hash(data.password),
-                        role=UserRole.ADMIN))
-            action = "создан"
-        else:
-            user.role = UserRole.ADMIN
-            user.hashed_password = get_password_hash(data.password)
-            action = "уже был — назначен админом, пароль обновлён"
+        user = db.scalar(select(User).where(User.email == lookup.email))
+        if user is not None:
+            if user.is_admin:
+                print(f"ℹ Пользователь '{user.email}' уже является администратором!")
+                return 0
+            user.is_admin = True
+            db.commit()
+            print(f"✅ Пользователь '{user.email}' успешно повышен до администратора!")
+            if password:
+                print("ℹ Пароль существующего пользователя не изменён — для смены: set-password")
+            return 0
+
+        if not password:
+            password = ask("Введите пароль для нового администратора: ")
+            if password is None:
+                return 1
+        data = _validate(email, password)
+        if data is None:
+            return 1
+        db.add(User(email=data.email, hashed_password=get_password_hash(data.password), is_admin=True))
         db.commit()
-    print(f"Администратор {data.email} {action}")
+    print(f"✅ Новый администратор '{data.email}' успешно создан!")
     return 0
 
 
@@ -160,15 +192,19 @@ def purge(clicks_days: int) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="python -m app.cli")
-    sub = parser.add_subparsers(dest="command", required=True)
-    ca = sub.add_parser("create-admin", help="Создать администратора с паролем")
-    ca.add_argument("email")
-    ca.add_argument("--password", help="Пароль (иначе берётся из ADMIN_PASSWORD или спрашивается)")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(prog="python -m app.cli", description="CLI управления рекламной платформой")
+    sub = parser.add_subparsers(dest="command", help="Команды")
+    ca = sub.add_parser("create-admin", help="Создать администратора или повысить существующего пользователя")
+    ca.add_argument("email", help="Email администратора")
+    ca.add_argument("--password", "-p", default=None,
+                    help="Пароль нового администратора (иначе ADMIN_PASSWORD или спросит дважды)")
     sub.add_parser("make-admin", help="Назначить пользователя администратором").add_argument("email")
     sp = sub.add_parser("set-password", help="Сбросить пароль пользователю (сеансы завершаются)")
     sp.add_argument("email")
-    sp.add_argument("--password", help="Новый пароль (иначе спрашивается)")
+    sp.add_argument("--password", "-p", default=None, help="Новый пароль (иначе спросит дважды)")
     bk = sub.add_parser("backup-db", help="Резервная копия SQLite (без остановки сервера)")
     bk.add_argument("target_dir", nargs="?", default="backups")
     pg = sub.add_parser("purge", help="Удалить старые служебные записи (клики, попытки входа)")
@@ -178,18 +214,19 @@ def main() -> int:
     topup.add_argument("amount")
     args = parser.parse_args()
     if args.command == "create-admin":
-        password = args.password or os.environ.get("ADMIN_PASSWORD") or getpass.getpass("Пароль: ")
-        return create_admin(args.email, password)
+        return create_admin(args.email, args.password or os.environ.get("ADMIN_PASSWORD"))
     if args.command == "make-admin":
         return make_admin(args.email)
     if args.command == "add-balance":
         return add_balance(args.email, args.amount)
     if args.command == "set-password":
-        return set_password(args.email, args.password or getpass.getpass("Новый пароль: "))
+        password = args.password or ask_password("Новый пароль: ")
+        return set_password(args.email, password) if password else 1
     if args.command == "backup-db":
         return backup_db(args.target_dir)
     if args.command == "purge":
         return purge(args.clicks_days)
+    parser.print_help()  # запуск без команды — подсказка
     return 1
 
 

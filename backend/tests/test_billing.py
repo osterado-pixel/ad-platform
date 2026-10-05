@@ -1,3 +1,4 @@
+import sys
 from decimal import Decimal
 
 import pytest
@@ -281,17 +282,47 @@ def test_unpaid_click_does_not_block_ip(make_client, db, world, monkeypatch):
 def test_cli_create_admin(db, monkeypatch):
     from app.auth import verify_password
     monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=db.get_bind()))
-    assert cli.create_admin("Boss@Mail.ru", "short") == 1  # пароль короче 8
+    assert cli.create_admin("Boss@Mail.ru", "short") == 1          # пароль короче 8
     assert cli.create_admin("not-an-email", "password123") == 1
     assert cli.create_admin("Boss@Mail.ru", "password123") == 0
     db.expire_all()
     boss = db.query(User).filter_by(email="boss@mail.ru").one()
-    assert boss.role.value == "admin" and verify_password("password123", boss.hashed_password)
-    # Повторно — тот же пользователь, новый пароль
+    assert boss.is_admin and verify_password("password123", boss.hashed_password)
+    # Повторно — «уже администратор», ничего не меняется
     assert cli.create_admin("boss@mail.ru", "newpassword1") == 0
     db.expire_all()
-    assert db.query(User).count() == 1
-    assert verify_password("newpassword1", db.query(User).one().hashed_password)
+    assert db.query(User).count() == 1 and verify_password("password123", db.query(User).one().hashed_password)
+
+
+def test_cli_create_admin_promotes_without_changing_password(db, monkeypatch):
+    from app.auth import get_password_hash, verify_password
+    monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    db.add(User(email="user@mail.ru", hashed_password=get_password_hash("ownpassword1")))
+    db.commit()
+    asked = []
+    assert cli.create_admin("USER@mail.ru", ask=lambda p: asked.append(p)) == 0
+    db.expire_all()
+    u = db.query(User).one()
+    assert u.is_admin and verify_password("ownpassword1", u.hashed_password)
+    assert asked == []  # существующему пароль не спрашивается
+
+
+def test_cli_create_admin_asks_password_twice(db, monkeypatch):
+    monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    answers = iter(["password123", "password124"])
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt="": next(answers))
+    assert cli.create_admin("new@mail.ru") == 1                      # не совпали
+    assert db.query(User).count() == 0
+    answers = iter(["password123", "password123"])
+    assert cli.create_admin("new@mail.ru") == 0
+    assert db.query(User).one().is_admin
+
+
+def test_cli_main_without_command_prints_help(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["python -m app.cli"])
+    assert cli.main() == 1
+    out = capsys.readouterr().out
+    assert "create-admin" in out and "set-password" in out and "backup-db" in out
 
 
 def test_cli_set_password(db, monkeypatch):
