@@ -11,3 +11,5 @@ __pycache__/
 backups/
 # Сгенерированный ключ подписи токенов (app/config.py)
 backend/data/
+.coverage
+htmlcov/
