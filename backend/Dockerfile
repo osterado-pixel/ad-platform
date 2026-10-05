@@ -23,7 +23,9 @@ RUN pip install -r requirements.txt
 COPY . .
 
 #    Запуск не от root: при взломе приложения у атакующего не будет прав root в контейнере
-RUN useradd --create-home --uid 10001 app && chown -R app /app
+#    /app/data — папка для SQLite (том в backend/docker-compose.yml). Создаётся заранее с правами
+#    пользователя app: иначе Docker создаст её от root, и база не сможет записываться
+RUN useradd --create-home --uid 10001 app && mkdir -p /app/data && chown -R app /app
 USER app
 
 # 7. Порт приложения
