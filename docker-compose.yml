@@ -6,13 +6,13 @@ services:
   db:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: adp
+      POSTGRES_USER: ${POSTGRES_USER:-adp}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
-      POSTGRES_DB: adp
+      POSTGRES_DB: ${POSTGRES_DB:-adp}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U adp -d adp"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -21,8 +21,10 @@ services:
   api:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg2://adp:${POSTGRES_PASSWORD}@db:5432/adp
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-adp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-adp}
       SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в .env}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       # Пусто — сторонним фронтендам доступ закрыт (встроенный интерфейс /app работает и так)
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
