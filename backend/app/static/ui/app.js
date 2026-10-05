@@ -328,6 +328,7 @@ const ROUTES = [
 
 function matchRoute(hash) {
   let m;
+  if (hash === "#/profile") return { view: profileView, nav: null };
   if ((m = hash.match(/^#\/campaigns\/new$/))) return { view: () => campaignFormView(null), nav: "#/campaigns" };
   if ((m = hash.match(/^#\/campaigns\/(\d+)\/edit$/))) return { view: () => campaignFormView(Number(m[1])), nav: "#/campaigns" };
   if ((m = hash.match(/^#\/campaigns\/(\d+)$/))) return { view: () => campaignDetailView(Number(m[1])), nav: "#/campaigns" };
@@ -378,7 +379,7 @@ function topbar() {
     h("a", { class: "brand", href: "#/overview" }, "Ad", h("span", {}, "Platform")),
     h("div", { class: "spacer" }),
     h("div", { class: "who" },
-      h("div", {}, me.email, me.role === "admin" ? " · админ" : ""),
+      h("div", {}, h("a", { href: "#/profile", title: "Профиль и пароль" }, me.email), me.role === "admin" ? " · админ" : ""),
       h("div", {}, "Баланс: ", h("b", { id: "balance" }, money(me.balance)))),
     h("button", { class: "small", onclick: () => logout() }, "Выйти"));
 }
@@ -829,6 +830,38 @@ async function platformView(days = 30) {
           h("td", { class: "num" }, ctr(p)), h("td", { class: "num" }, money(p.spend)))),
         "Площадок нет")));
   return wrap;
+}
+
+// ---------- Профиль: смена пароля ----------
+async function profileView() {
+  const cur = h("input", { type: "password", id: "p-current", required: true, autocomplete: "current-password" });
+  const next = h("input", { type: "password", id: "p-new", required: true, minLength: 8, autocomplete: "new-password" });
+  const again = h("input", { type: "password", id: "p-again", required: true, minLength: 8, autocomplete: "new-password" });
+  const submit = h("button", { class: "primary", type: "submit" }, "Сменить пароль");
+  const form = h("form", {
+    class: "card",
+    style: "max-width:420px",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      if (next.value !== again.value) { toast("Новые пароли не совпадают", "error"); again.focus(); return; }
+      const res = await run(submit, () => api("POST", "/auth/change-password",
+        { current_password: cur.value, new_password: next.value }),
+      "Пароль изменён. На других устройствах нужно войти заново");
+      if (res) { writeToken(res.access_token); form.reset(); }
+    },
+  },
+  h("h2", {}, "Смена пароля"),
+  h("div", { class: "field" }, h("label", { for: "p-current" }, "Текущий пароль"), cur),
+  h("div", { class: "field" }, h("label", { for: "p-new" }, "Новый пароль"), next,
+    h("div", { class: "hint" }, "Не короче 8 символов")),
+  h("div", { class: "field" }, h("label", { for: "p-again" }, "Новый пароль ещё раз"), again),
+  submit);
+  return h("div", {},
+    h("h1", {}, "Профиль"),
+    h("div", { class: "card small" }, h("div", {}, "Email: ", h("b", {}, state.me.email)),
+      h("div", {}, "Роль: ", state.me.role === "admin" ? "администратор" : "рекламодатель"),
+      h("div", { class: "muted" }, "Зарегистрирован: ", dateTime(state.me.created_at))),
+    form);
 }
 
 // ---------- Старт ----------

@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # Стоимость bcrypt: 12 ≈ 0.25 с на хеш — защита от перебора. В тестах ставим 4
     bcrypt_rounds: int = Field(default=12, ge=4, le=16)
 
+    # Защита от перебора паролей и массовой регистрации
+    login_max_failures_per_email: int = Field(default=5, ge=1)
+    login_max_failures_per_ip: int = Field(default=20, ge=1)
+    login_window_minutes: int = Field(default=15, ge=1)
+    register_max_per_ip_per_hour: int = Field(default=10, ge=1)
+
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
 

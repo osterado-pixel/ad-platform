@@ -52,6 +52,8 @@ class User(Base):
         _enum(UserRole, "user_role"), default=UserRole.ADVERTISER,
         server_default=UserRole.ADVERTISER.value)
     balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    # Версия токенов: смена пароля увеличивает её, и все ранее выданные токены перестают действовать
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -174,3 +176,17 @@ class CampaignDailyStat(Base):
     impressions: Mapped[int] = mapped_column(default=0, server_default="0")
     clicks: Mapped[int] = mapped_column(default=0, server_default="0")
     spend: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+
+
+class AuthAttempt(Base):
+    """Попытки входа/регистрации для ограничения частоты (см. app/ratelimit.py)."""
+    __tablename__ = "auth_attempts"
+    __table_args__ = (
+        Index("ix_auth_attempts_kind_key_ts", "kind", "key", "ts"),
+        Index("ix_auth_attempts_ts", "ts"),  # для очистки старых записей
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))  # login_email, login_ip, register_ip
+    key: Mapped[str] = mapped_column(String(64))    # HMAC от email/IP — сами значения не храним
+    ts: Mapped[int] = mapped_column(BigInteger)     # unix-время, сек

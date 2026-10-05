@@ -260,3 +260,25 @@ def test_campaigns_load_more(server, browser):
     expect(rows.last).to_contain_text("Кампания 00")
     expect(page.locator("button:has-text('Показать ещё')")).to_be_hidden()
     assert errors == [], errors
+
+
+def test_change_password_in_ui(server, browser):
+    import httpx2 as httpx
+    errors = []
+    httpx.post(server + "/api/v1/auth/register", json={"email": "pwd@e2e.ru", "password": PASSWORD})
+    page = new_page(browser, errors)
+    login(page, server, "pwd@e2e.ru")
+    other = httpx.post(server + "/api/v1/auth/login",
+                       data={"username": "pwd@e2e.ru", "password": PASSWORD}).json()["access_token"]
+
+    page.click("a:has-text('pwd@e2e.ru')")
+    page.fill("#p-current", PASSWORD)
+    page.fill("#p-new", "brandnew123")
+    page.fill("#p-again", "brandnew123")
+    page.click("button:has-text('Сменить пароль')")
+    page.wait_for_selector("text=Пароль изменён")
+    # Текущий сеанс работает с новым токеном, другой «устройство» — разлогинен
+    page.click("nav a:has-text('Кошелёк')")
+    page.wait_for_selector("h1:has-text('Кошелёк')")
+    assert httpx.get(server + "/api/v1/auth/me", headers={"Authorization": f"Bearer {other}"}).status_code == 401
+    assert errors == [], errors

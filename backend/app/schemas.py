@@ -49,6 +49,11 @@ class UserCreate(BaseModel):
     password: Password
 
 
+class PasswordChange(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: Password
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

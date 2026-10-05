@@ -48,11 +48,12 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     return user
 
 
-def create_access_token(user_id: int, expires_delta: timedelta | None = None) -> str:
+def create_access_token(user_id: int, expires_delta: timedelta | None = None, token_version: int = 0) -> str:
     now = datetime.now(timezone.utc)
     expire = now + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
-    # sub — id, а не email: токен не ломается при смене email
-    payload = {"sub": str(user_id), "iat": now, "exp": expire}
+    # sub — id, а не email: токен не ломается при смене email.
+    # ver — версия токенов пользователя: после смены пароля старые токены недействительны
+    payload = {"sub": str(user_id), "ver": token_version, "iat": now, "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
@@ -68,11 +69,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             options={"require": ["sub", "exp"]},
         )
         user_id = int(payload["sub"])
-    except (jwt.PyJWTError, ValueError):
+        version = int(payload.get("ver", 0))
+    except (jwt.PyJWTError, ValueError, TypeError):
         raise credentials_exception from None
 
     user = db.get(User, user_id)
-    if user is None:
+    if user is None or user.token_version != version:  # пароль сменили — токен отозван
         raise credentials_exception
     return user
 
