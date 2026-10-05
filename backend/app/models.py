@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger, CheckConstraint, Date, DateTime, Enum, ForeignKey,
     Index, Numeric, String, Text, UniqueConstraint, func,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -61,6 +62,23 @@ class User(Base):
 
     campaigns: Mapped[list["Campaign"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan", passive_deletes=True)
+
+    # Флаг администратора — производный от role, а не отдельная колонка: иначе у пользователя
+    # было бы два независимых признака админа, которые могут разойтись (role=advertiser,
+    # is_admin=True) — и проверки доступа противоречили бы друг другу.
+    # Работает и чтение, и запись, и User(is_admin=True), и запросы User.is_admin == True
+    @hybrid_property
+    def is_admin(self) -> bool:
+        return self.role == UserRole.ADMIN
+
+    @is_admin.inplace.setter
+    def _is_admin_setter(self, value: bool) -> None:
+        self.role = UserRole.ADMIN if value else UserRole.ADVERTISER
+
+    @is_admin.inplace.expression
+    @classmethod
+    def _is_admin_expression(cls):
+        return cls.role == UserRole.ADMIN
 
 
 class Placement(Base):

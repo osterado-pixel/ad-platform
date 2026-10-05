@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     role: UserRole
+    is_admin: bool = False  # то же, что role == "admin" — удобно фронтенду
     balance: Money
     created_at: UtcDatetime
 
