@@ -41,8 +41,8 @@ docker compose exec api python -m app.cli create-admin admin@example.com
 
 Если `.env` нет, запуск не падает: у всех переменных есть значения по умолчанию, а вместо
 `SECRET_KEY` приложение генерирует случайный ключ и хранит его в томе `app_data` (у каждой
-установки свой, переживает перезапуск). Для сервера, открытого в интернет, задайте свои
-`POSTGRES_PASSWORD` и `SECRET_KEY` — или используйте вариант из корня проекта, где это обязательно.
+установки свой, переживает перезапуск). Для сервера, открытого в интернет, всё равно задайте
+свой `POSTGRES_PASSWORD`: пароль по умолчанию есть в этом README.
 
 Приложение ждёт готовности PostgreSQL и само применяет миграции. Данные — в томе `postgres_data`,
 переживают пересоздание контейнеров. База доступна только с этого компьютера:
@@ -51,8 +51,8 @@ docker compose exec api python -m app.cli create-admin admin@example.com
 ### Docker + PostgreSQL, настройки из корневого .env (сервер)
 
 ```bash
-cp .env.example .env          # заполните POSTGRES_PASSWORD и SECRET_KEY
-docker compose up -d --build
+cp .env.example .env          # POSTGRES_PASSWORD и SECRET_KEY — свои случайные
+docker compose up -d --build  # без .env тоже запустится: значения по умолчанию, ключ генерируется
 docker compose exec api python -m app.cli create-admin admin@example.com
 ```
 

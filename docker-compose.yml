@@ -1,14 +1,22 @@
-# Запуск: скопируйте .env.example в .env, заполните пароли и выполните
+# Запуск из папки ad-platform:
 #   docker compose up -d --build
 # Первый администратор:
 #   docker compose exec api python -m app.cli create-admin admin@example.com
+#
+# Значения — из .env рядом с этим файлом (см. .env.example). Если .env нет или в нём чего-то
+# не хватает, у всех переменных есть значения по умолчанию — запуск не падает.
+# Боевой сервер с доменом и HTTPS: + docker-compose.prod.yml (см. README).
 services:
   db:
     image: postgres:17-alpine
+    container_name: ad_platform_db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-adp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
-      POSTGRES_DB: ${POSTGRES_DB:-adp}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Пароль по умолчанию допустим: порт базы наружу не открыт, к ней подключается только
+      # приложение из внутренней сети Docker. PostgreSQL запоминает пароль при первом запуске:
+      # если позже поменять его в .env, базу придётся пересоздать
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword123}
+      POSTGRES_DB: ${POSTGRES_DB:-ad_platform_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,11 +28,15 @@ services:
 
   api:
     build: ./backend
+    container_name: ad_platform_backend
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-adp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-adp}
-      SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в .env}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-mysecretpassword123}@db:5432/${POSTGRES_DB:-ad_platform_db}
+      # Без SECRET_KEY приложение не падает и НЕ берёт известный всем ключ из примеров
+      # (API открыт в сеть — с таким ключом подделали бы вход): генерирует случайный ключ
+      # и хранит его в томе app_data, он переживает перезапуск
+      SECRET_KEY: ${SECRET_KEY:-}
       ALGORITHM: ${ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       # Пусто — сторонним фронтендам доступ закрыт (встроенный интерфейс /app работает и так)
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
@@ -33,10 +45,14 @@ services:
       CLICK_DEDUP_MINUTES: ${CLICK_DEDUP_MINUTES:-10}
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      - app_data:/app/data
     depends_on:
       db:
+        # Ждём, пока PostgreSQL реально принимает подключения: иначе миграции при старте упадут
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
   pgdata:
+  app_data:
