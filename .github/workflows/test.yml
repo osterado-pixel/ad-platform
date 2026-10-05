@@ -19,16 +19,13 @@ defaults:
   run:
     working-directory: backend  # requirements.txt, тесты и код — в backend/
 
+# Задачи идут ПО ОЧЕРЕДИ (needs): checks → e2e → docker → publish. Аккаунту GitHub
+# выделяется мало параллельных серверов — при 7 одновременных задачах лишние 15 минут ждали
+# в очереди и отменялись («The job was not acquired by Runner ... after multiple attempts»).
 jobs:
-  test:
-    name: Тесты (Python ${{ matrix.python }}, ${{ matrix.db }})
+  checks:
+    name: Тесты (SQLite и PostgreSQL) и миграции
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: [ "3.13", "3.14" ]   # 3.14 — как в Docker-образе
-        db: [ sqlite, postgres ]
-
     services:
       postgres:
         image: postgres:17-alpine
@@ -44,6 +41,10 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    env:
+      # Не короче 32 символов — иначе приложение не запустится
+      SECRET_KEY: ci-test-secret-key-0123456789abcdefghijklmnop
+      PG_URL: postgresql+psycopg2://postgres:testpassword@localhost:5432/ad_platform_test
 
     steps:
       - name: Чтение исходного кода
@@ -52,7 +53,7 @@ jobs:
       - name: Установка Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.14"   # как в Docker-образе
           cache: pip
           cache-dependency-path: backend/requirements*.txt
 
@@ -61,54 +62,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Запуск тестов и проверка покрытия
-        env:
-          # Не короче 32 символов — иначе приложение не запустится
-          SECRET_KEY: ci-test-secret-key-0123456789abcdefghijklmnop
-          # Тесты никогда не трогают DATABASE_URL (рабочую базу) — для прогона на PostgreSQL
-          # служит TEST_DATABASE_URL; пусто — SQLite в памяти
-          TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql+psycopg2://postgres:testpassword@localhost:5432/ad_platform_test' || '' }}
-        run: python -m pytest --cov=app --cov-report=term-missing
-
-  migrations:
-    name: Миграции на PostgreSQL
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: ad_platform_migrations
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgresql+psycopg2://postgres:testpassword@localhost:5432/ad_platform_migrations
-      SECRET_KEY: ci-test-secret-key-0123456789abcdefghijklmnop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: backend/requirements*.txt
-      - run: pip install -r requirements.txt
-      - name: Накат всех миграций
-        run: alembic upgrade head
+      # Миграции — первыми, на пустой базе: накат, сверка с моделями, откат
+      - name: Миграции на PostgreSQL — накат всех
+        run: DATABASE_URL="$PG_URL" alembic upgrade head
       - name: Модели совпадают со схемой (нет забытой миграции)
-        run: alembic check
-      - name: Откат и повторный накат
+        run: DATABASE_URL="$PG_URL" alembic check
+      - name: Откат и повторный накат, затем снова пустая база для тестов
         run: |
-          alembic downgrade base
-          alembic upgrade head
+          DATABASE_URL="$PG_URL" alembic downgrade base
+          DATABASE_URL="$PG_URL" alembic upgrade head
+          DATABASE_URL="$PG_URL" alembic downgrade base
+
+      # Тесты никогда не трогают DATABASE_URL (рабочую базу): SQLite в памяти,
+      # а для PostgreSQL — TEST_DATABASE_URL
+      - name: Тесты на SQLite (с покрытием кода)
+        run: python -m pytest --cov=app --cov-report=term-missing
+      - name: Тесты на PostgreSQL
+        env:
+          TEST_DATABASE_URL: ${{ env.PG_URL }}
+        run: python -m pytest -q
 
   e2e:
     name: Браузерные тесты (Chromium)
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,9 +108,9 @@ jobs:
           path: /tmp/adp_e2e_failures/
           if-no-files-found: ignore
 
-  # Отдельной задачей, а не шагом в test: test — матрица из 4 прогонов, образ собирался бы 4 раза
   docker:
     name: Сборка Docker-образа
+    needs: e2e
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -182,7 +158,7 @@ jobs:
   # у которого упали тесты, миграции или браузерные тесты
   publish:
     name: Публикация образа в GHCR
-    needs: [ test, migrations, e2e, docker ]
+    needs: [ checks, e2e, docker ]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Право писать в реестр — только этой задаче, а не всему workflow
