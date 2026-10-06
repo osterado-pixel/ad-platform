@@ -47,6 +47,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
       AI_AUTO_REJECT: ${AI_AUTO_REJECT:-false}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

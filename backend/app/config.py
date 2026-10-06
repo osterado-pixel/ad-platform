@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     # Автоматически отклонять, если модель уверенно нашла нарушение (verdict=reject, risk=high).
     # По умолчанию выключено: решение всегда за модератором, модель лишь подсказывает
     ai_auto_reject: bool = False
+    # Ключ Google Gemini API (Google AI Studio, aistudio.google.com/apikey)
+    gemini_api_key: str = ""
 
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
