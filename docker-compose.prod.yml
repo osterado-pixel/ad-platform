@@ -13,6 +13,33 @@
 # Отдельное имя проекта: не пересекается с docker-compose.yml (сборка из исходников)
 name: ad-platform-prod
 
+# Общие настройки приложения: api и celery_worker должны работать с одинаковыми базой, ключами,
+# ценами и курсом — иначе воркер считал бы деньги не так, как api
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-mysecretpassword123}@db:5432/${POSTGRES_DB:-ad_platform_db}
+  # Не задан — приложение генерирует случайный ключ и хранит его в томе prod_app_data.
+  # НЕ известный всем ключ из примеров: с ним подделали бы вход под администратором
+  SECRET_KEY: ${SECRET_KEY:-}
+  ALGORITHM: ${ALGORITHM:-HS256}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+  WEB_WORKERS: ${WEB_WORKERS:-2}
+  FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+  CLICK_DEDUP_MINUTES: ${CLICK_DEDUP_MINUTES:-10}
+  # AI-проверка объявлений: без ключа выключена, модерация только вручную
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
+  AI_AUTO_REJECT: ${AI_AUTO_REJECT:-false}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+  GEMINI_PRICE_INPUT_PER_1M: ${GEMINI_PRICE_INPUT_PER_1M:-0.75}
+  GEMINI_PRICE_OUTPUT_PER_1M: ${GEMINI_PRICE_OUTPUT_PER_1M:-3.75}
+  AI_MARKUP: ${AI_MARKUP:-1.5}
+  USD_RATE: ${USD_RATE:-1}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  REDIS_URL: redis://:${REDIS_PASSWORD:-myredispassword123}@redis:6379/0
+
 services:
   db:
     image: postgres:17-alpine
@@ -58,30 +85,7 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-8000}:8000"
-    environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-mysecretpassword123}@db:5432/${POSTGRES_DB:-ad_platform_db}
-      # Не задан — приложение генерирует случайный ключ и хранит его в томе prod_app_data.
-      # НЕ известный всем ключ из примеров: с ним подделали бы вход под администратором
-      SECRET_KEY: ${SECRET_KEY:-}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
-      WEB_WORKERS: ${WEB_WORKERS:-2}
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
-      CLICK_DEDUP_MINUTES: ${CLICK_DEDUP_MINUTES:-10}
-      # AI-проверка объявлений: без ключа выключена, модерация только вручную
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
-      AI_AUTO_REJECT: ${AI_AUTO_REJECT:-false}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
-      GEMINI_PRICE_INPUT_PER_1M: ${GEMINI_PRICE_INPUT_PER_1M:-0.75}
-      GEMINI_PRICE_OUTPUT_PER_1M: ${GEMINI_PRICE_OUTPUT_PER_1M:-3.75}
-      AI_MARKUP: ${AI_MARKUP:-1.5}
-      USD_RATE: ${USD_RATE:-1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-myredispassword123}@redis:6379/0
+    environment: *app-env
     volumes:
       - prod_app_data:/app/data
     depends_on:
@@ -89,6 +93,29 @@ services:
         # Ждём, пока PostgreSQL реально принимает подключения: иначе миграции при старте упадут
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  celery_worker:
+    # Тот же образ, что у api (та же версия кода), но вместо веб-сервера — обработчик очереди
+    image: ghcr.io/osterado-pixel/ad-platform:${IMAGE_TAG:-latest}
+    container_name: prod_ad_platform_celery
+    restart: unless-stopped
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-2}
+    environment: *app-env
+    volumes:
+      - prod_app_data:/app/data  # тот же сгенерированный SECRET_KEY, что у api
+    # Проверка образа обращается к веб-серверу, которого у воркера нет — своя проверка: воркер отвечает
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 | grep -q pong"]
+      interval: 30s
+      timeout: 20s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+      # api при старте применяет миграции: воркер начинает работу с базой только после них
+      api:
         condition: service_healthy
 
 volumes:

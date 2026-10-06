@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # Сколько единиц валюты баланса стоит 1 $ (баланс в долларах — 1, в рублях — курс, например 90)
     usd_rate: Decimal = Field(default=Decimal("1"), gt=0)
 
+    # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
+    redis_url: str = "redis://localhost:6379/0"
+
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
 

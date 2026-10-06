@@ -86,6 +86,11 @@ API наружу не открыт — только через Caddy, поэто
 на сервере задайте свой) и сохранением данных между перезапусками (том `prod_redis_data`).
 Приложение получает адрес в `REDIS_URL`.
 
+**Celery-воркер** (`celery_worker`) — отдельный процесс из того же образа, выполняет фоновые задачи из
+очереди Redis (`app/worker.py`). Настройки (база, ключи, цены, курс) у него те же, что у `api`, —
+общий блок `x-app-env` в начале файла. Стартует после `api`, то есть после применения миграций.
+Число одновременных задач — `CELERY_CONCURRENCY` (2). Логи: `docker compose -f docker-compose.prod.yml logs -f celery_worker`.
+
 ### Вручную (любая ОС)
 
 ```bash
@@ -405,6 +410,7 @@ backend/
     auth.py          пароли (bcrypt), токены (JWT), require_admin
     ai.py            AI-проверка объявления (Claude, Anthropic API)
     moderation.py    запуск AI-проверки и сохранение результата
+    worker.py        Celery: очередь фоновых задач (Redis)
     services/        gemini_service.py — AI-копирайтер (Google Gemini); moderation_service.py — быстрая модерация текста
     routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai
     static/          widget.js, demo.html, ui/ (веб-интерфейс)
