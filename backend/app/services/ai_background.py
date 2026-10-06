@@ -29,7 +29,8 @@ log = logging.getLogger(__name__)
 PROMPT_TYPE = "gemini_background_ad"
 # Дольше генерация не идёт (таймаут Gemini 30 с с повторами): старше — значит, прервана
 STALE_AFTER = timedelta(minutes=10)
-INTERRUPTED = "Задача прервана перезапуском сервера. Деньги не списаны — запустите генерацию ещё раз"
+INTERRUPTED = ("Задача не завершилась вовремя (сбой или перезапуск сервера). "
+               "Деньги не списаны — запустите генерацию ещё раз")
 
 
 def _move(db: Session, task_id: str, frm: AITaskStatus, to: AITaskStatus, *where, **values) -> bool:

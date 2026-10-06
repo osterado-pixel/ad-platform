@@ -131,7 +131,7 @@ def test_stale_processing_task_refunded(db, gemini, factory):
     make_old(db, tid)
     assert bg.fail_stale_tasks(factory) == 1
     task = task_of(db, tid)
-    assert task.status == AITaskStatus.FAILED and "перезапуском" in task.error_message
+    assert task.status == AITaskStatus.FAILED and "перезапуск сервера" in task.error_message
     assert balance_of(db, user.id) == Decimal("10")
     assert_ledger_matches(db, user.id)
     assert bg.fail_stale_tasks(factory) == 0  # повторно резерв не возвращается
