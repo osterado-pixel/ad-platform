@@ -26,6 +26,9 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 VARIANTS_COUNT = 3
+MAX_OUTPUT_TOKENS = 4096
+# Верхняя оценка входа: инструкция + описание (до 2000 символов) + аудитория (до 300) с запасом
+MAX_PROMPT_TOKENS = 4000
 
 
 class AdVariant(BaseModel):
@@ -76,6 +79,11 @@ def calculate_gemini_cost(prompt_tokens: int, completion_tokens: int) -> Decimal
     return (cost * settings.ai_markup).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
+def max_cost() -> Decimal:
+    """Наибольшая стоимость одного запроса, $ — столько резервируется на балансе до вызова модели."""
+    return calculate_gemini_cost(MAX_PROMPT_TOKENS, MAX_OUTPUT_TOKENS)
+
+
 def _user_data(product_description: str, target_audience: str) -> str:
     data = json.dumps({"product_description": product_description, "target_audience": target_audience},
                       ensure_ascii=False, indent=2)
@@ -96,7 +104,7 @@ def generate_ad(product_description: str, target_audience: str) -> dict:
                 response_schema=AdVariants,
                 # Короткие тексты: долгие «размышления» не нужны, а они оплачиваются как ответ
                 thinking_config=types.ThinkingConfig(thinking_level="low"),
-                max_output_tokens=4096,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
             ),
         )
     except errors.ClientError as e:  # 4xx

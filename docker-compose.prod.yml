@@ -57,6 +57,10 @@ services:
       AI_AUTO_REJECT: ${AI_AUTO_REJECT:-false}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_PRICE_INPUT_PER_1M: ${GEMINI_PRICE_INPUT_PER_1M:-0.75}
+      GEMINI_PRICE_OUTPUT_PER_1M: ${GEMINI_PRICE_OUTPUT_PER_1M:-3.75}
+      AI_MARKUP: ${AI_MARKUP:-1.5}
+      USD_RATE: ${USD_RATE:-1}
     volumes:
       - prod_app_data:/app/data
     depends_on:

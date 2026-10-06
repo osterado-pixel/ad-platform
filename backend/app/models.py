@@ -39,6 +39,7 @@ class TransactionType(str, enum.Enum):
     DEPOSIT = "deposit"          # Пополнение баланса
     CLICK_SPEND = "click_spend"  # Списание за клик
     REFUND = "refund"            # Возврат средств
+    AI_SPEND = "ai_spend"        # Оплата AI-генерации (копирайтер)
 
 
 class User(Base):
@@ -216,3 +217,22 @@ class AuthAttempt(Base):
     kind: Mapped[str] = mapped_column(String(20))  # login_email, login_ip, register_ip
     key: Mapped[str] = mapped_column(String(64))    # HMAC от email/IP — сами значения не храним
     ts: Mapped[int] = mapped_column(BigInteger)     # unix-время, сек
+
+
+class AILog(Base):
+    """Журнал AI-запросов: модель, токены, себестоимость и списанная сумма."""
+    __tablename__ = "ai_logs"
+    __table_args__ = (Index("ix_ai_logs_user_id_id", "user_id", "id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    prompt_type: Mapped[str] = mapped_column(String(50))  # gemini_ad_copy
+    model: Mapped[str] = mapped_column(String(100))
+    prompt_tokens: Mapped[int] = mapped_column(default=0)
+    completion_tokens: Mapped[int] = mapped_column(default=0)  # включая «размышления» модели
+    total_tokens: Mapped[int] = mapped_column(default=0)
+    # Стоимость в $ с наценкой (6 знаков) и сумма, списанная с баланса (в валюте баланса, до копеек)
+    cost: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    charged: Mapped[Decimal] = mapped_column(Money)
+    transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

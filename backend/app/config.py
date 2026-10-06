@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     gemini_price_input_per_1m: Decimal = Field(default=Decimal("0.75"), ge=0)
     gemini_price_output_per_1m: Decimal = Field(default=Decimal("3.75"), ge=0)  # включая «размышления»
     ai_markup: Decimal = Field(default=Decimal("1.5"), ge=1)  # наценка платформы к себестоимости
+    # Сколько единиц валюты баланса стоит 1 $ (баланс в долларах — 1, в рублях — курс, например 90)
+    usd_rate: Decimal = Field(default=Decimal("1"), gt=0)
 
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)

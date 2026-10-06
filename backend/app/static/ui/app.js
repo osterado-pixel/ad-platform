@@ -163,7 +163,8 @@ const STATUS = {
   draft: "Черновик", moderation: "На модерации", ready_to_pay: "Ожидает оплаты", active: "Активна",
   paused: "На паузе", completed: "Завершена", rejected: "Отклонена",
 };
-const TX_TYPE = { deposit: "Пополнение", click_spend: "Оплата клика", refund: "Возврат" };
+const TX_TYPE = { deposit: "Пополнение", click_spend: "Оплата клика", refund: "Возврат", ai_spend: "AI-копирайтер" };
+const TX_SPEND = new Set(["click_spend", "ai_spend"]);  // списания — со знаком «−»
 
 const money = (v) => Number(v || 0).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const int = (v) => Number(v || 0).toLocaleString("ru-RU");
@@ -649,8 +650,8 @@ async function walletView() {
       h("td", {}, TX_TYPE[t.type] || t.type),
       h("td", {}, t.description || "",
         t.campaign_id ? h("span", {}, " · ", h("a", { href: `#/campaigns/${t.campaign_id}` }, `кампания #${t.campaign_id}`)) : null),
-      h("td", { class: "num", style: t.type === "click_spend" ? "" : "color:var(--ok)" },
-        (t.type === "click_spend" ? "−" : "+") + money(t.amount)));
+      h("td", { class: "num", style: TX_SPEND.has(t.type) ? "" : "color:var(--ok)" },
+        (TX_SPEND.has(t.type) ? "−" : "+") + money(t.amount)));
   const { more, first: count } = await cursorFeed("/wallet/history", 50, txRow, rows);
 
   const isAdmin = state.me.role === "admin";

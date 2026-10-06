@@ -10,9 +10,11 @@ from app.models import Transaction, TransactionType, User
 
 
 def add_transaction(db: Session, *, user_id: int, amount: Decimal, type: TransactionType,
-                    campaign_id: int | None = None, description: str | None = None) -> None:
-    db.add(Transaction(user_id=user_id, amount=amount, type=type, campaign_id=campaign_id,
-                       description=description))
+                    campaign_id: int | None = None, description: str | None = None) -> Transaction:
+    tx = Transaction(user_id=user_id, amount=amount, type=type, campaign_id=campaign_id,
+                     description=description)
+    db.add(tx)
     # UPDATE на стороне БД: параллельные клики не потеряют приращение
     db.execute(update(User).where(User.id == user_id)
                .values(transactions_count=User.transactions_count + 1))
+    return tx

@@ -365,6 +365,47 @@ CampaignAnalyticsItem = CampaignTotals
 AnalyticsSummaryResponse = MyStats
 
 
+# --- AI-копирайтер ---
+class AdGenerateRequest(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{
+        "product_description": "Онлайн-курс Python с нуля: 40 уроков, практика, сертификат",
+        "target_audience": "Начинающие разработчики 18–30 лет",
+    }]})
+
+    product_description: str = Field(min_length=10, max_length=2000)
+    target_audience: str = Field(default="Общая аудитория", min_length=1, max_length=300)
+
+    @field_validator("product_description", "target_audience")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Поле не может быть пустым")
+        return v
+
+
+class AdCopyVariant(BaseModel):
+    title: str
+    text: str
+    cta: str
+
+
+class AdCopyContent(BaseModel):
+    variants: list[AdCopyVariant]
+
+
+class AdCopyBilling(BaseModel):
+    tokens_used: int
+    cost_deducted: Money = Field(description="Списано с баланса (в валюте баланса)")
+    remaining_balance: Money
+
+
+class AdCopyResponse(BaseModel):
+    success: bool = True
+    data: AdCopyContent
+    billing: AdCopyBilling
+
+
 # --- Универсальный контейнер постраничной выдачи ---
 T = TypeVar("T")
 
