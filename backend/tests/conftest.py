@@ -58,6 +58,7 @@ def db():
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
+    import app.models  # noqa: F401 — регистрирует таблицы в Base.metadata (иначе create_all создаст пустую БД)
     from app.database import Base
 
     url = os.environ.get("TEST_DATABASE_URL")
@@ -105,6 +106,61 @@ def auth_headers(db):
     db.add(admin)
     db.commit()
     return {"Authorization": f"Bearer {create_access_token(admin.id)}"}
+
+
+@pytest.fixture
+def test_user(db):
+    """Рекламодатель с балансом 10.00 (и операцией пополнения в журнале — баланс сходится с историей)."""
+    from decimal import Decimal
+
+    from app.ledger import add_transaction
+    from app.models import TransactionType, User
+
+    user = User(email="test@example.com", hashed_password="x", balance=Decimal("10.00"),
+                held_balance=Decimal("0.00"))
+    db.add(user)
+    db.flush()
+    add_transaction(db, user_id=user.id, amount=Decimal("10.00"), type=TransactionType.DEPOSIT)
+    db.commit()
+    return user
+
+
+@pytest.fixture
+def user_headers(test_user):
+    """Заголовок авторизации test_user: запросы проходят настоящую проверку токена, а не подмену."""
+    from app.auth import create_access_token
+
+    return {"Authorization": f"Bearer {create_access_token(test_user.id)}"}
+
+
+GEMINI_VARIANTS = {"variants": [
+    {"title": f"Заголовок {i}", "text": "Текст объявления", "cta": "Купить"} for i in range(1, 4)]}
+
+
+@pytest.fixture
+def mock_gemini(monkeypatch):
+    """Подмена вызова Gemini (unittest.mock): настоящий API не вызывается.
+
+    По умолчанию — успешный ответ (3 варианта, себестоимость $0.004). В тесте можно поменять:
+        mock_gemini.return_value = {...}             # другой ответ
+        mock_gemini.side_effect = AIUnavailable(...)  # ошибка Gemini
+        mock_gemini.assert_called_once_with(описание, аудитория)
+    """
+    from decimal import Decimal
+    from unittest import mock
+
+    from app.config import settings
+    from app.services import gemini_service
+
+    monkeypatch.setattr(settings, "gemini_api_key", "AIza-test")  # копирайтер «включён»
+    monkeypatch.setattr(settings, "usd_rate", Decimal("1"))
+    fake = mock.MagicMock(name="generate_ad", return_value={
+        "content": GEMINI_VARIANTS,
+        "usage": {"model": "gemini-test", "prompt_tokens": 600, "completion_tokens": 400,
+                  "total_tokens": 1000, "cost": Decimal("0.004")},
+    })
+    with mock.patch.object(gemini_service, "generate_ad", fake):
+        yield fake
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
