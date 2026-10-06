@@ -1,4 +1,5 @@
 import enum
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -217,6 +218,33 @@ class AuthAttempt(Base):
     kind: Mapped[str] = mapped_column(String(20))  # login_email, login_ip, register_ip
     key: Mapped[str] = mapped_column(String(64))    # HMAC от email/IP — сами значения не храним
     ts: Mapped[int] = mapped_column(BigInteger)     # unix-время, сек
+
+
+class AITaskStatus(str, enum.Enum):
+    PENDING = "pending"        # создана, ждёт обработчика
+    PROCESSING = "processing"  # обработчик работает
+    COMPLETED = "completed"    # готово, результат в result
+    FAILED = "failed"          # ошибка, причина в error_message
+
+
+class AITask(Base):
+    """Фоновая AI-задача: клиент получает id сразу и опрашивает статус, не держа соединение."""
+    __tablename__ = "ai_tasks"
+    # Список задач пользователя, новые сверху
+    __table_args__ = (Index("ix_ai_tasks_user_id_created_at", "user_id", "created_at"),)
+
+    # UUID строкой: id нельзя угадать перебором, как 1, 2, 3 (задачи — личные данные пользователя)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    status: Mapped[AITaskStatus] = mapped_column(
+        _enum(AITaskStatus, "ai_task_status"), default=AITaskStatus.PENDING,
+        server_default=AITaskStatus.PENDING.value)
+    result: Mapped[dict | None] = mapped_column(JSON)
+    error_message: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Когда статус менялся в последний раз: «зависшую» в processing задачу видно по давности
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class AILog(Base):
