@@ -205,17 +205,17 @@ const { items, total } = await r.json();
 **PostgreSQL (Docker), Windows** — скрипт `backup.ps1` в корне проекта:
 
 ```powershell
-.ackup.ps1                             # боевой стек; для docker-compose.yml: -Container ad_platform_db
+.\backup.ps1                             # боевой стек; для docker-compose.yml: -Container ad_platform_db
 ```
 
-Создаёт `backupsackup_<база>_<дата>.dump`, проверяет, что копию можно прочитать, и удаляет копии
+Создаёт `backups\backup_<база>_<дата>.dump`, проверяет, что копию можно прочитать, и удаляет копии
 старше 7 дней (`-KeepDays`) — только после успешной копии и всегда оставляя 3 самые свежие.
 Ежедневный запуск через Планировщик заданий — в комментариях в начале скрипта.
 
 Восстановление — `restore.ps1`:
 
 ```powershell
-.estore.ps1                              # самая свежая копия; или -BackupFile .ackups\<файл>.dump
+.\restore.ps1                              # самая свежая копия; или -BackupFile .\backups\<файл>.dump
 ```
 
 Копия сначала восстанавливается во временную базу и проверяется; затем API останавливается, рабочая
