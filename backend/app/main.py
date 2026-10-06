@@ -1,3 +1,5 @@
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -6,6 +8,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -16,10 +19,22 @@ from app.routers import ads, ai, auth, campaigns, placements, stats, users, wall
 
 # Схема БД управляется миграциями Alembic: `alembic upgrade head` из папки backend/
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Фоновые AI-задачи, прерванные прошлым перезапуском: закрываем и возвращаем зарезервированные деньги
+    from app.services.ai_background import fail_stale_tasks
+    try:
+        fail_stale_tasks()
+    except SQLAlchemyError as e:  # например, миграции ещё не применены — сервер всё равно запускается
+        logging.getLogger(__name__).warning("Проверка прерванных AI-задач пропущена: %s", e)
+    yield
+
+
 app = FastAPI(
     title="Ad Platform API",
     version="1.0.0",
-    description="API рекламной платформы"
+    description="API рекламной платформы",
+    lifespan=lifespan,
 )
 
 # Порядок: последний добавленный выполняется первым (внешний слой)

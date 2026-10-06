@@ -241,6 +241,8 @@ class AITask(Base):
         server_default=AITaskStatus.PENDING.value)
     result: Mapped[dict | None] = mapped_column(JSON)
     error_message: Mapped[str | None] = mapped_column(String(1000))
+    # Операция резерва денег (ai_spend): если задачу прервал перезапуск сервера, резерв по ней возвращается
+    transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Когда статус менялся в последний раз: «зависшую» в processing задачу видно по давности
     updated_at: Mapped[datetime] = mapped_column(

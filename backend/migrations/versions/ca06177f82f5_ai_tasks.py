@@ -27,8 +27,10 @@ def upgrade() -> None:
     sa.Column('status', sa.Enum('pending', 'processing', 'completed', 'failed', name='ai_task_status', native_enum=False, create_constraint=True), server_default='pending', nullable=False),
     sa.Column('result', sa.JSON(), nullable=True),
     sa.Column('error_message', sa.String(length=1000), nullable=True),
+    sa.Column('transaction_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.ForeignKeyConstraint(['transaction_id'], ['transactions.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

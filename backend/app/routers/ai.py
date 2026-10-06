@@ -2,50 +2,30 @@
 
 0. Модерация описания и аудитории (стоп-фразы + OpenAI Moderation) — до денег и до Gemini:
    за запрещённый текст платный запрос не отправляется и с баланса ничего не резервируется.
-
-Порядок оплаты (резерв → генерация → расчёт):
-1. Атомарно резервируем максимально возможную стоимость запроса (UPDATE ... WHERE balance >= резерв)
-   и сразу пишем операцию ai_spend в журнал: баланс всегда равен сумме журнала, а параллельные
-   запросы не потратят больше, чем есть на балансе (иначе 10 одновременных запросов прошли бы
-   проверку «баланс ≥ 0.01», а оплачен был бы один).
-2. Генерация — вне транзакции БД (запрос к Gemini длится секунды).
-3. Успех: операция уменьшается до фактической цены, разница возвращается на баланс, запись в ai_logs.
-   Ошибка: резерв возвращается полностью (операция refund) — за неудачную генерацию не платят.
+1–3. Резерв → генерация вне транзакции БД → расчёт по факту или полный возврат
+     (подробно — app/services/ai_billing.py).
 """
 import logging
-from decimal import ROUND_UP, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.ai import AIUnavailable
 from app.auth import get_current_user
-from app.config import settings
 from app.database import get_db, write_lock
-from app.ledger import add_transaction
-from app.models import AILog, Transaction, TransactionType, User
+from app.models import User
 from app.schemas import AdCopyResponse, AdGenerateRequest
-from app.services import gemini_service
+from app.services import ai_billing, gemini_service
 from app.services.moderation_service import moderate_text_sync
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/ai", tags=["AI-копирайтер"])
 
-CENT = Decimal("0.01")
 
-
-def to_balance(usd: Decimal) -> Decimal:
-    """$ → валюта баланса, вверх до копейки и не меньше 0.01 (в журнале сумма всегда > 0)."""
-    return max((usd * settings.usd_rate).quantize(CENT, rounding=ROUND_UP), CENT)
-
-
-def _refund_hold(db: Session, user_id: int, hold: Decimal) -> None:
+def _refund(db: Session, hold: ai_billing.Hold) -> None:
     with write_lock():
-        db.execute(update(User).where(User.id == user_id).values(balance=User.balance + hold))
-        add_transaction(db, user_id=user_id, amount=hold, type=TransactionType.REFUND,
-                        description="Возврат: AI-генерация не выполнена")
+        ai_billing.refund(db, hold)
         db.commit()
 
 
@@ -62,56 +42,29 @@ def generate_ad_copy(
     #    Эндпоинт синхронный (выполняется в пуле потоков), поэтому sync-вариант moderate_text
     moderate_text_sync(f"{request.product_description}\n{request.target_audience}")
 
-    user_id = current_user.id
-    hold = to_balance(gemini_service.max_cost())
-
     # 1. Резерв
-    with write_lock():
-        reserved = db.execute(
-            update(User).where(User.id == user_id, User.balance >= hold)
-            .values(balance=User.balance - hold)
-        ).rowcount
-        if not reserved:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"Недостаточно средств для AI-генерации: нужно не меньше {hold:.2f} на балансе "
-                       "(лишнее вернётся после генерации)",
-            )
-        tx = add_transaction(db, user_id=user_id, amount=hold, type=TransactionType.AI_SPEND,
-                             description="AI-копирайтер: резерв")
-        db.commit()
-        tx_id = tx.id
+    try:
+        hold = ai_billing.reserve(db, current_user.id)
+    except ai_billing.InsufficientFunds as e:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e)) from None
 
     # 2. Генерация — без открытой транзакции
     try:
         result = gemini_service.generate_ad(request.product_description, request.target_audience)
     except AIUnavailable as e:
-        _refund_hold(db, user_id, hold)
+        _refund(db, hold)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=f"AI-генерация не выполнена: {e}. Деньги не списаны") from e
     except Exception:
         log.exception("AI-копирайтер: непредвиденная ошибка")
-        _refund_hold(db, user_id, hold)
+        _refund(db, hold)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail="Внутренняя ошибка AI-генерации. Деньги не списаны") from None
 
-    # 3. Расчёт по факту. Если вдруг дороже резерва — берём не больше резерва
+    # 3. Расчёт по факту
     usage = result["usage"]
-    charge = min(to_balance(usage["cost"]), hold)
     with write_lock():
-        remaining = db.scalar(
-            update(User).where(User.id == user_id)
-            .values(balance=User.balance + (hold - charge)).returning(User.balance)
-        )
-        db.execute(update(Transaction).where(Transaction.id == tx_id).values(
-            amount=charge,
-            description=f"AI-копирайтер: {usage['total_tokens']} токенов ({usage['model']})"[:255]))
-        db.add(AILog(
-            user_id=user_id, prompt_type="gemini_ad_copy", model=usage["model"],
-            prompt_tokens=usage["prompt_tokens"], completion_tokens=usage["completion_tokens"],
-            total_tokens=usage["total_tokens"], cost=usage["cost"], charged=charge, transaction_id=tx_id,
-        ))
+        charge, remaining = ai_billing.settle(db, hold, usage, prompt_type="gemini_ad_copy")
         db.commit()
 
     return AdCopyResponse(
