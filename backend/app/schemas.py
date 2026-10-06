@@ -431,3 +431,9 @@ class PaginatedResponse(BaseModel, Generic[T]):
     total: int = Field(..., ge=0, description="Общее количество записей в базе")
     limit: int = Field(..., ge=1, description="Размер страницы")
     offset: int = Field(..., ge=0, description="Смещение")
+
+
+class AITaskListResponse(PaginatedResponse[AITaskResponse]):
+    """Список AI-задач: общий формат списков (items, total, limit, offset) + номер страницы."""
+    page: int = Field(..., ge=1, description="Номер страницы (с 1)")
+    size: int = Field(..., ge=1, description="Размер страницы (то же, что limit)")

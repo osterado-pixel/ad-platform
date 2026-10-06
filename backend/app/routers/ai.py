@@ -10,7 +10,7 @@
 """
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,8 @@ from app.ai import AIUnavailable
 from app.auth import get_current_user
 from app.database import background_session_factory, get_db, write_lock
 from app.models import AITask, AITaskStatus, User
-from app.schemas import AdCopyResponse, AdGenerateRequest, AITaskCreated, AITaskResponse
+from app.pagination import MAX_OFFSET
+from app.schemas import AdCopyResponse, AdGenerateRequest, AITaskCreated, AITaskListResponse, AITaskResponse
 from app.services import ai_billing, gemini_service
 from app.services.ai_background import run_gemini_generation_task
 from app.services.moderation_service import check_local_rules, moderate_text_sync
@@ -127,6 +128,30 @@ def start_ad_generation(
         session_factory=background_session_factory(db),
     )
     return AITaskCreated(task_id=task_id, check_status_url=f"/api/v1/ai/tasks/{task_id}")
+
+
+@router.get("/tasks", response_model=AITaskListResponse)
+def get_user_ai_tasks(
+    status_filter: AITaskStatus | None = Query(
+        default=None, alias="status", description="Фильтр по статусу: pending, processing, completed, failed"),
+    page: int = Query(default=1, ge=1, description="Номер страницы"),
+    size: int = Query(default=10, ge=1, le=100, description="Количество задач на странице"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Фоновые AI-задачи текущего пользователя, новые сверху. Фильтр по статусу и постраничная выдача."""
+    offset = (page - 1) * size
+    if offset > MAX_OFFSET:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            detail=f"Слишком далёкая страница: сдвиг не больше {MAX_OFFSET} задач")
+    query = select(AITask).where(AITask.user_id == current_user.id)
+    if status_filter is not None:
+        query = query.where(AITask.status == status_filter)
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    # id — второй ключ сортировки: у задач, созданных в одну секунду, порядок между страницами не «прыгает»
+    tasks = db.scalars(query.order_by(AITask.created_at.desc(), AITask.id.desc()).offset(offset).limit(size)).all()
+    return AITaskListResponse(items=[_task_response(t) for t in tasks], total=total,
+                              limit=size, offset=offset, page=page, size=size)
 
 
 @router.get("/tasks/{task_id}", response_model=AITaskResponse)
