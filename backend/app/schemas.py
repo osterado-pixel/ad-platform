@@ -408,6 +408,12 @@ class AdCopyResponse(BaseModel):
     billing: AdCopyBilling
 
 
+class AICopywriterStatus(BaseModel):
+    enabled: bool = Field(description="Копирайтер включён (задан GEMINI_API_KEY)")
+    hold_amount: Money = Field(description="Сколько замораживается на одну генерацию (лишнее вернётся)")
+    max_active_tasks: int
+
+
 class AITaskCreated(BaseModel):
     task_id: str
     status: Literal["pending"] = "pending"

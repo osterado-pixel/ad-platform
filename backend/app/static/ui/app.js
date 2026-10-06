@@ -559,6 +559,86 @@ async function campaignDetailView(id, days = 30) {
   return wrap;
 }
 
+// ---------- AI-копирайтер: фоновая задача + опрос статуса ----------
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const AI_POLL_LIMIT_MS = 150000;  // дольше генерация не идёт: дальше задачу закроет очистка зависших
+
+// Блок над формой кампании. onUse(variant) — подставить выбранный вариант в поля формы
+async function aiCopywriterPanel(onUse) {
+  const status = await api("GET", "/ai/status").catch(() => ({ enabled: false }));
+  if (!status.enabled) return null;
+
+  const product = h("textarea", { id: "ai-product", maxLength: 2000, rows: 3,
+    placeholder: "Что рекламируете: товар или услуга, чем хороши, цена, особенности" });
+  const audience = h("input", { id: "ai-audience", maxLength: 300, placeholder: "Общая аудитория" });
+  const generate = h("button", { id: "ai-generate", type: "button", class: "primary" }, "Сгенерировать варианты");
+  const statusBox = h("div", { class: "stack" });
+  const results = h("div", { class: "stack" });
+  const panel = h("div", { class: "card stack", id: "ai-copywriter" },
+    h("h2", { style: "margin:0" }, "AI-копирайтер"),
+    h("div", { class: "hint" }, `Опишите товар — ИИ предложит 3 варианта объявления. На время генерации заморозится `,
+      money(status.hold_amount), `, спишется по факту (обычно меньше), остальное вернётся; при ошибке — всё.`),
+    h("div", { class: "form-grid" },
+      h("div", { class: "field full" }, h("label", { for: "ai-product" }, "Описание товара"), product),
+      h("div", { class: "field full" }, h("label", { for: "ai-audience" }, "Целевая аудитория (необязательно)"), audience)),
+    h("div", { class: "row" }, generate), statusBox, results);
+
+  const showVariants = (variants) => results.replaceChildren(...variants.map((v, i) => {
+    const use = h("button", { type: "button", class: "small" }, "Использовать");
+    use.onclick = () => { onUse(v); toast("Вариант подставлен в форму — проверьте и сохраните"); };
+    return h("div", { class: "card stack ai-variant" },
+      h("div", { class: "small muted" }, `Вариант ${i + 1}`),
+      h("b", {}, v.title), h("div", {}, v.text),
+      h("div", { class: "small muted" }, "Призыв к действию: ", v.cta),
+      h("div", { class: "row" }, use));
+  }));
+
+  generate.onclick = async () => {
+    const description = product.value.trim();
+    if (description.length < 10) { product.focus(); toast("Опишите товар подробнее — от 10 символов", "error"); return; }
+    results.replaceChildren();
+    const task = await run(generate, () => api("POST", "/ai/generate-async",
+      { product_description: description, target_audience: audience.value.trim() || "Общая аудитория" }));
+    if (!task) return;  // 402 / 422 / 429 / 503 — сообщение уже показано
+    refreshMe().catch(() => {});  // заморозка видна в балансе сразу
+    generate.disabled = true;
+    const started = Date.now();
+    const progress = h("progress", { style: "width:100%" });  // без value — бегущая полоса
+    const label = h("div", { class: "small muted" }, "Задача поставлена в очередь…");
+    statusBox.replaceChildren(progress, label);
+    try {
+      let delay = 1000;
+      while (panel.isConnected) {  // ушли со страницы — опрос прекращается
+        await sleep(delay);
+        delay = Math.min(delay * 1.5, 4000);
+        const t = await api("GET", `/ai/tasks/${task.task_id}`);
+        const seconds = Math.round((Date.now() - started) / 1000);
+        if (t.status === "completed") {
+          statusBox.replaceChildren(h("div", { class: "notice ok" }, "Готово — выберите вариант"));
+          showVariants(t.result.variants);
+          return;
+        }
+        if (t.status === "failed") {
+          statusBox.replaceChildren(h("div", { class: "notice error" }, t.error || "Генерация не удалась"));
+          return;
+        }
+        label.textContent = (t.status === "pending" ? "Ожидание в очереди… " : "Генерируем… ") + `${seconds} с`;
+        if (Date.now() - started > AI_POLL_LIMIT_MS) {
+          statusBox.replaceChildren(h("div", { class: "notice warn" },
+            "Генерация идёт дольше обычного. Результат появится в списке задач; если задача не завершится, деньги вернутся автоматически."));
+          return;
+        }
+      }
+    } catch (err) {
+      statusBox.replaceChildren(h("div", { class: "notice error" }, `Не удалось получить результат: ${err.message}`));
+    } finally {
+      if (generate.isConnected) generate.disabled = false;
+      refreshMe().catch(() => {});  // списано по факту или возвращено
+    }
+  };
+  return panel;
+}
+
 async function campaignFormView(id) {
   const [placements, original] = await Promise.all([
     loadPlacements(true), id ? api("GET", `/campaigns/${id}`) : Promise.resolve(null)]);
@@ -638,7 +718,15 @@ async function campaignFormView(id) {
   h("div", { class: "field" }, h("label", {}, "Предпросмотр"), preview),
   h("div", { class: "row" }, submit, h("a", { class: "btn", href: id ? `#/campaigns/${id}` : "#/campaigns" }, "Отмена")));
 
-  return h("div", {}, h("h1", {}, id ? "Изменить кампанию" : "Новая кампания"), form);
+  // Выбранный вариант AI-копирайтера — в поля формы (в пределах их длины); сохраняет пользователь сам
+  const aiPanel = await aiCopywriterPanel((v) => {
+    f.title.value = v.title.slice(0, 255);
+    f.description.value = `${v.text} ${v.cta}`.trim().slice(0, 1000);
+    updatePreview();
+    f.title.focus();
+  });
+
+  return h("div", {}, h("h1", {}, id ? "Изменить кампанию" : "Новая кампания"), aiPanel, form);
 }
 
 // ---------- Кошелёк ----------

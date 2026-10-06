@@ -194,3 +194,13 @@ def test_stale_pending_task_with_hold_refunded(client, db, gemini, monkeypatch):
     assert (balance_of(db, user.id), held_of(db, user.id)) == (Decimal("10"), Decimal("0"))
     assert client.get(TASK.format(task_id), headers=h).json()["status"] == "failed"
     assert_ledger_matches(db, user.id)
+
+
+def test_copywriter_status(client, db, gemini, monkeypatch):
+    _, h = user_with_balance(db, "10")
+    assert client.get("/api/v1/ai/status", headers=h).json() == {
+        "enabled": True, "hold_amount": 0.03, "max_active_tasks": 5}
+    from app.config import settings
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    assert client.get("/api/v1/ai/status", headers=h).json()["enabled"] is False
+    assert client.get("/api/v1/ai/status").status_code == 401

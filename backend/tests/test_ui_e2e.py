@@ -333,3 +333,82 @@ def test_ai_hint_in_moderation_queue(server, browser):
     card.locator("button:has-text('Отклонить')").click()
     admin.wait_for_selector("text=Очередь пуста")
     assert errors == [], errors
+
+
+def _ai_routes(page, task_states, enabled=True):
+    """Подменяет ответы /api/v1/ai/* в браузере: Gemini не нужен, проверяется логика интерфейса."""
+    import json as _json
+    page.route("**/api/v1/ai/status", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json.dumps({"enabled": enabled, "hold_amount": 0.03, "max_active_tasks": 5})))
+    page.route("**/api/v1/ai/generate-async", lambda route: route.fulfill(
+        status=202, content_type="application/json",
+        body=_json.dumps({"task_id": "t-1", "status": "pending", "check_status_url": "/api/v1/ai/tasks/t-1",
+                          "held_amount": 0.03, "message": "Средства зарезервированы, задача запущена"})))
+    states = list(task_states)
+
+    def task(route):
+        body = states.pop(0) if len(states) > 1 else states[0]
+        route.fulfill(status=200, content_type="application/json", body=_json.dumps({
+            "task_id": "t-1", "created_at": "2026-10-06T10:00:00Z", "updated_at": "2026-10-06T10:00:01Z",
+            "result": None, "error": None, **body}))
+    page.route("**/api/v1/ai/tasks/t-1", task)
+
+
+def _advertiser(server, email):
+    import httpx2 as httpx
+    httpx.post(server + "/api/v1/auth/register", json={"email": email, "password": PASSWORD})
+
+
+def test_ai_copywriter_in_campaign_form(server, browser):
+    errors = []
+    _advertiser(server, "copy@e2e.ru")
+    page = new_page(browser, errors)
+    xss = "<img src=x onerror=alert('XSS')>"
+    variants = [{"title": "Python с нуля за 3 месяца", "text": "Практика и ментор", "cta": "Записаться"},
+                {"title": xss, "text": "Вариант 2", "cta": "Купить"},
+                {"title": "Курс Python", "text": "Вариант 3", "cta": "Начать"}]
+    _ai_routes(page, [{"status": "pending"}, {"status": "processing"},
+                      {"status": "completed", "result": {"variants": variants}}])
+    login(page, server, "copy@e2e.ru")
+    page.goto(server + "/app#/campaigns/new")
+
+    page.fill("#ai-product", "коротко")  # меньше 10 символов — запрос не отправляется
+    page.click("#ai-generate")
+    page.wait_for_selector("text=Опишите товар подробнее")
+
+    page.fill("#ai-product", "Онлайн-курс Python для начинающих, 40 уроков")
+    page.click("#ai-generate")
+    playwright_api.expect(page.locator(".ai-variant")).to_have_count(3, timeout=15000)
+    playwright_api.expect(page.locator("#ai-copywriter .notice.ok")).to_contain_text("Готово")
+    # Текст модели — как текст, не как HTML
+    playwright_api.expect(page.locator(".ai-variant").nth(1)).to_contain_text(xss)
+    assert page.locator(".ai-variant img").count() == 0
+
+    page.locator(".ai-variant").first.locator("button:has-text('Использовать')").click()
+    assert page.input_value("#f-title") == "Python с нуля за 3 месяца"
+    assert page.input_value("#f-description") == "Практика и ментор Записаться"
+    playwright_api.expect(page.locator(".ad-preview, .card").filter(has_text="Python с нуля за 3 месяца").first).to_be_visible()
+    assert errors == [], errors
+
+
+def test_ai_copywriter_failed_task_and_disabled(server, browser):
+    errors = []
+    _advertiser(server, "copyfail@e2e.ru")
+    page = new_page(browser, errors)
+    _ai_routes(page, [{"status": "failed", "error": "AI-генерация не выполнена: превышен лимит. Деньги не списаны"}])
+    login(page, server, "copyfail@e2e.ru")
+    page.goto(server + "/app#/campaigns/new")
+    page.fill("#ai-product", "Онлайн-курс Python для начинающих")
+    page.click("#ai-generate")
+    playwright_api.expect(page.locator("#ai-copywriter .notice.error")).to_contain_text("Деньги не списаны", timeout=15000)
+    assert page.locator(".ai-variant").count() == 0
+    playwright_api.expect(page.locator("#ai-generate")).to_be_enabled()  # можно попробовать снова
+
+    # Копирайтер выключен (на тестовом сервере нет GEMINI_API_KEY) — блока нет, форма работает
+    page2 = new_page(browser, errors)
+    login(page2, server, "copyfail@e2e.ru")
+    page2.goto(server + "/app#/campaigns/new")
+    page2.wait_for_selector("#f-title")
+    assert page2.locator("#ai-copywriter").count() == 0
+    assert errors == [], errors

@@ -19,7 +19,9 @@ from app.auth import get_current_user
 from app.database import background_session_factory, get_db, write_lock
 from app.models import AITask, AITaskStatus, User
 from app.pagination import MAX_OFFSET
-from app.schemas import AdCopyResponse, AdGenerateRequest, AITaskCreated, AITaskListResponse, AITaskResponse
+from app.schemas import (
+    AdCopyResponse, AdGenerateRequest, AICopywriterStatus, AITaskCreated, AITaskListResponse, AITaskResponse,
+)
 from app.services import ai_billing, gemini_service
 from app.services.ai_background import run_gemini_generation_task
 from app.services.billing import hold_user_balance
@@ -34,6 +36,13 @@ def _refund(db: Session, hold: ai_billing.Hold) -> None:
     with write_lock():
         ai_billing.refund(db, hold)
         db.commit()
+
+
+@router.get("/status", response_model=AICopywriterStatus)
+def copywriter_status(_user: User = Depends(get_current_user)):
+    """Для интерфейса: показывать ли кнопку копирайтера и сколько будет заморожено."""
+    return AICopywriterStatus(enabled=gemini_service.is_enabled(), hold_amount=ai_billing.hold_amount(),
+                              max_active_tasks=MAX_ACTIVE_TASKS)
 
 
 @router.post("/generate-copy", response_model=AdCopyResponse)
