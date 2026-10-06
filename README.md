@@ -398,10 +398,12 @@ E2E_DATABASE_URL=postgresql+psycopg2://user@host/adp_e2e  pytest -m e2e
 В терминале — файлы с непокрытыми строками и номерами этих строк, полный отчёт —
 `backend/htmlcov/index.html`.
 
-**CI (GitHub Actions)** — `.github/workflows/test.yml`, запускается на каждый push и pull request
-в `main` / `master` / `develop`: тесты на Python 3.13 и 3.14 × SQLite и PostgreSQL (с покрытием
-кода), миграции на PostgreSQL (накат, сверка с моделями, откат), браузерные тесты в Chromium
-(скриншоты сбоев — в артефактах), сборка Docker-образа.
+**CI (GitHub Actions)** — `.github/workflows/tests.yml`, запускается на каждый push и pull request
+в `main` / `master` / `develop` (и вручную — кнопкой в разделе Actions). Одна задача, шаги по порядку,
+любой упавший шаг останавливает остальные: миграции на PostgreSQL (накат, сверка с моделями, откат),
+pytest на SQLite и на PostgreSQL (Python 3.14, как в Docker-образе; покрытие не ниже 80%),
+браузерные тесты в Chromium (скриншоты сбоев — в артефактах), сборка Docker-образа и проверка,
+что он запускается.
 
 **Готовый образ (GHCR).** После каждого push в `main`, если прошли все проверки, образ
 публикуется в GitHub Container Registry с тегами `latest` и коротким хешем коммита:
