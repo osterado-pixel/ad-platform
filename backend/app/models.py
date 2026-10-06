@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    BigInteger, CheckConstraint, Date, DateTime, Enum, ForeignKey,
+    JSON, BigInteger, CheckConstraint, Date, DateTime, Enum, ForeignKey,
     Index, Numeric, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -120,6 +120,12 @@ class Campaign(Base):
         _enum(CampaignStatus, "campaign_status"), default=CampaignStatus.DRAFT,
         server_default=CampaignStatus.DRAFT.value, index=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text)
+    # AI-проверка (app/ai.py) — подсказка модератору; при каждой отправке на модерацию сбрасывается
+    ai_verdict: Mapped[str | None] = mapped_column(String(20))   # approve | review | reject | error
+    ai_risk: Mapped[str | None] = mapped_column(String(10))      # low | medium | high
+    ai_reasons: Mapped[list | None] = mapped_column(JSON)
+    ai_summary: Mapped[str | None] = mapped_column(Text)         # итог или текст ошибки проверки
+    ai_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Показы и оплаченные клики (повторные и от ботов не считаются)
     impressions_count: Mapped[int] = mapped_column(default=0, server_default="0")
     clicks_count: Mapped[int] = mapped_column(default=0, server_default="0")

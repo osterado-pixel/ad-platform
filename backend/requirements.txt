@@ -11,3 +11,4 @@ email-validator==2.3.0
 bcrypt==5.0.0
 pyjwt==2.15.1
 python-multipart==0.0.32
+anthropic==1.11.0

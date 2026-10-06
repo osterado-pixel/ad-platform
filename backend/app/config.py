@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     login_window_minutes: int = Field(default=15, ge=1)
     register_max_per_ip_per_hour: int = Field(default=10, ge=1)
 
+    # AI-проверка объявлений (Claude). Нет ключа — проверка выключена, модерация только ручная
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-opus-5-5"
+    ai_timeout_seconds: float = Field(default=30, gt=0)
+    # Автоматически отклонять, если модель уверенно нашла нарушение (verdict=reject, risk=high).
+    # По умолчанию выключено: решение всегда за модератором, модель лишь подсказывает
+    ai_auto_reject: bool = False
+
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
 
