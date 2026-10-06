@@ -20,7 +20,7 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel, Field, ValidationError
 
-from app.ai import AIUnavailable
+from app.ai import AIUnavailable, ContentRefused
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -80,8 +80,14 @@ def calculate_gemini_cost(prompt_tokens: int, completion_tokens: int) -> Decimal
 
 
 def max_cost() -> Decimal:
-    """Наибольшая стоимость одного запроса, $ — столько резервируется на балансе до вызова модели."""
-    return calculate_gemini_cost(MAX_PROMPT_TOKENS, MAX_OUTPUT_TOKENS)
+    """Наибольшая стоимость одного запроса, $ — столько резервируется на балансе до вызова модели.
+
+    С резервной моделью — наибольшая из двух: деньги резервируются до того, как станет ясно,
+    ответит ли Gemini.
+    """
+    from app.services import claude_copywriter  # здесь, а не наверху: тот модуль импортирует этот
+    gemini = calculate_gemini_cost(MAX_PROMPT_TOKENS, MAX_OUTPUT_TOKENS)
+    return max(gemini, claude_copywriter.max_cost()) if claude_copywriter.is_enabled() else gemini
 
 
 def _user_data(product_description: str, target_audience: str) -> str:
@@ -91,9 +97,30 @@ def _user_data(product_description: str, target_audience: str) -> str:
 
 
 def generate_ad(product_description: str, target_audience: str) -> dict:
-    """Варианты объявления + расход токенов. AIUnavailable — если сгенерировать не удалось."""
+    """Варианты объявления + расход токенов (usage.model — какая модель ответила).
+
+    Gemini не ответил (лимит, недоступность, таймаут, неверный ключ, ответ не по схеме) — резервная
+    модель Claude, если задан ANTHROPIC_API_KEY. Отказ из-за самого текста (ContentRefused) резервом
+    не повторяется: другая модель откажет так же, а запрос платный. AIUnavailable — если не ответил никто.
+    """
     if not is_enabled():
         raise AIUnavailable("AI-копирайтер выключен: не задан GEMINI_API_KEY")
+    from app.services import claude_copywriter
+    try:
+        return _generate_with_gemini(product_description, target_audience)
+    except ContentRefused:
+        raise
+    except AIUnavailable as e:
+        if not claude_copywriter.is_enabled():
+            raise
+        log.warning("Gemini не ответил (%s) — генерация резервной моделью %s", e, settings.claude_copy_model)
+        try:
+            return claude_copywriter.generate_ad(product_description, target_audience)
+        except AIUnavailable as fallback_error:
+            raise type(fallback_error)(f"{e}; резервная модель: {fallback_error}") from fallback_error
+
+
+def _generate_with_gemini(product_description: str, target_audience: str) -> dict:
     try:
         response = _get_client().models.generate_content(
             model=settings.gemini_model,
@@ -111,6 +138,8 @@ def generate_ad(product_description: str, target_audience: str) -> dict:
         if e.code == 429:
             raise AIUnavailable("превышен лимит запросов к Gemini API") from e
         if e.code in (400, 401, 403) and "key" in str(e).lower():
+            # Ошибка настройки, а не временный сбой: ERROR — оповещение в Sentry, даже если выручит резерв
+            log.error("Gemini отклонил ключ GEMINI_API_KEY (%s)", e.code)
             raise AIUnavailable("неверный GEMINI_API_KEY") from e
         raise AIUnavailable(f"ошибка Gemini API ({e.code})") from e
     except errors.ServerError as e:  # 5xx
@@ -123,11 +152,11 @@ def generate_ad(product_description: str, target_audience: str) -> dict:
     candidate = response.candidates[0] if response.candidates else None
     if candidate is None:
         # Запрос целиком заблокирован фильтрами безопасности (prompt_feedback.block_reason)
-        raise AIUnavailable("Gemini отказался обрабатывать описание — измените текст")
+        raise ContentRefused("Gemini отказался обрабатывать описание — измените текст")
     if candidate.finish_reason == types.FinishReason.MAX_TOKENS:
         raise AIUnavailable("ответ модели обрезан — попробуйте ещё раз")
     if candidate.finish_reason not in (None, types.FinishReason.STOP):
-        raise AIUnavailable("Gemini отказался составлять объявление — измените описание")
+        raise ContentRefused("Gemini отказался составлять объявление — измените описание")
 
     try:
         content = AdVariants.model_validate_json(response.text or "")

@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     gemini_price_input_per_1m: Decimal = Field(default=Decimal("0.75"), ge=0)
     gemini_price_output_per_1m: Decimal = Field(default=Decimal("3.75"), ge=0)  # включая «размышления»
     ai_markup: Decimal = Field(default=Decimal("1.5"), ge=1)  # наценка платформы к себестоимости
+    # Резервная модель копирайтера: при сбое Gemini (лимит, недоступность, таймаут) — Claude.
+    # Работает, если задан ANTHROPIC_API_KEY. Haiku 4.5 — быстрая и дешёвая, для коротких текстов хватает
+    ai_copy_fallback: bool = True
+    claude_copy_model: str = "claude-haiku-4-5"
+    # Цены, $ за 1 млн токенов (platform.claude.com/docs/en/about-claude/pricing): Haiku 4.5 — 1 / 5
+    claude_price_input_per_1m: Decimal = Field(default=Decimal("1"), ge=0)
+    claude_price_output_per_1m: Decimal = Field(default=Decimal("5"), ge=0)
     # OpenAI Moderation API (бесплатный, но нужен ключ OpenAI): нет ключа — только локальный фильтр
     openai_api_key: str = ""
     openai_moderation_model: str = "omni-moderation-latest"

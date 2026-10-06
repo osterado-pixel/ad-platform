@@ -30,6 +30,10 @@ class AIUnavailable(Exception):
     """AI-проверка не выполнена: выключена, сбой сети/API или отказ модели."""
 
 
+class ContentRefused(AIUnavailable):
+    """Модель отказалась из-за самого текста пользователя — другая модель откажет так же."""
+
+
 # Поля ответа задаёт JSON-схема (output_config.format): модель не может вернуть произвольный текст
 RESULT_SCHEMA = {
     "type": "object",

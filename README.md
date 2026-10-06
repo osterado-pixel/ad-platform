@@ -231,6 +231,13 @@ API: `POST /api/v1/ai/generate-copy` с телом
   платный запрос к Gemini не отправляется. Параллельные запросы не уведут баланс в минус.
 - Генерация не удалась (сеть, лимиты, блокировка) — резерв возвращается целиком (операция «Возврат»).
 - Описание товара передаётся модели как данные, а не как инструкции.
+- **Резервная модель.** Если Gemini не ответил (лимит 429, недоступность 5xx, таймаут, нет связи,
+  неверный ключ, обрезанный или кривой ответ) и задан `ANTHROPIC_API_KEY`, варианты составляет Claude
+  (`CLAUDE_COPY_MODEL`, по умолчанию Haiku 4.5) — тем же промптом, в том же формате. Оплата — по ценам
+  той модели, что ответила (`ai_logs.model`); заморозка — по более дорогой из двух. Если Gemini
+  отказался из-за самого текста, Claude не вызывается: откажет так же, а запрос платный.
+  Неверный `GEMINI_API_KEY` пишется в лог как ошибка (оповещение Sentry), даже если выручил резерв.
+  Выключить — `AI_COPY_FALLBACK=false`.
 - На бесплатном тарифе Google AI Studio запросы используются Google для улучшения продуктов,
   на платном — нет.
 
@@ -456,7 +463,8 @@ backend/
     worker.py        Celery: очередь фоновых задач (Redis)
     monitoring.py    Sentry: оповещения об ошибках
     services/        billing.py — заморозка/списание/возврат (поверх ai_billing.py);
-                     gemini_service.py — AI-копирайтер (Google Gemini); moderation_service.py — быстрая модерация текста
+                     gemini_service.py — AI-копирайтер (Gemini), claude_copywriter.py — его резерв (Claude);
+                     moderation_service.py — быстрая модерация текста; ai_background.py, ai_cleanup.py — фоновые задачи
     routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai
     static/          widget.js, demo.html, ui/ (веб-интерфейс)
     cli.py           команды администратора
