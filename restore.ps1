@@ -43,7 +43,8 @@ function Psql([string]$sql) {
 $envValues = @{}
 $envFile = Join-Path $PSScriptRoot ".env"
 if (Test-Path $envFile) {
-    foreach ($line in Get-Content $envFile) {
+    # UTF-8, как читает .env docker compose (без -Encoding PowerShell 5.1 прочтёт его как ANSI)
+    foreach ($line in Get-Content $envFile -Encoding UTF8) {
         if ($line -match '^\s*([A-Za-z_]+)\s*=\s*(.*?)\s*$') { $envValues[$Matches[1]] = $Matches[2] }
     }
 }

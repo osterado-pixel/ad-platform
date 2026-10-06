@@ -3,7 +3,14 @@
 #   .\backup.ps1                                  # боевой стек (prod_ad_platform_db)
 #   .\backup.ps1 -Container ad_platform_db        # стек из docker-compose.yml
 #   .\backup.ps1 -KeepDays 14
+#   .\backup.ps1 -OffsiteDir "D:\Backups"         # + копия вне этого диска (см. ниже)
 #   Если PowerShell запрещает скрипты:  powershell -ExecutionPolicy Bypass -File .\backup.ps1
+#
+# Копия ВНЕ компьютера — -OffsiteDir или BACKUP_OFFSITE_DIR в .env (тогда и для расписания):
+# папка Google Drive / Dropbox / OneDrive (синхронизируется в облако), внешний диск или сетевая
+# папка (\\nas\backups). Если умрёт диск компьютера, копии там уцелеют. Файл сверяется по SHA-256;
+# там действуют те же правила очистки. Сбой этой копии — код выхода 2 (локальная копия при этом есть).
+# В копии — email пользователей и хеши паролей: облако выбирайте своё, с двухфакторным входом.
 #
 # Создаёт ./backups/backup_<база>_<дата>.dump (сжатый формат pg_dump, восстанавливается pg_restore),
 # проверяет копию и удаляет копии старше KeepDays дней — только если новая создана успешно,
@@ -22,7 +29,9 @@ param(
     [int]$KeepAtLeast = 3,
     [string]$BackupDir = (Join-Path $PSScriptRoot "backups"),
     # Журнал запусков: при запуске по расписанию окна не видно — только так узнать о сбое
-    [string]$LogFile
+    [string]$LogFile,
+    # Вторая копия вне этого диска (облачная папка, внешний диск, сеть). Пусто — BACKUP_OFFSITE_DIR из .env
+    [string]$OffsiteDir
 )
 
 # Continue, а не Stop: в Windows PowerShell 5.1 вывод программ в stderr при Stop прерывает скрипт.
@@ -47,12 +56,26 @@ function Fail([string]$message) {
 $envValues = @{}
 $envFile = Join-Path $PSScriptRoot ".env"
 if (Test-Path $envFile) {
-    foreach ($line in Get-Content $envFile) {
+    # UTF-8, как читает .env docker compose: без -Encoding PowerShell 5.1 прочтёт кириллицу в пути как ANSI
+    foreach ($line in Get-Content $envFile -Encoding UTF8) {
         if ($line -match '^\s*([A-Za-z_]+)\s*=\s*(.*?)\s*$') { $envValues[$Matches[1]] = $Matches[2] }
     }
 }
 $DbUser = if ($envValues["POSTGRES_USER"]) { $envValues["POSTGRES_USER"] } else { "postgres" }
 $DbName = if ($envValues["POSTGRES_DB"]) { $envValues["POSTGRES_DB"] } else { "ad_platform_db" }
+if (-not $OffsiteDir -and $envValues["BACKUP_OFFSITE_DIR"]) { $OffsiteDir = $envValues["BACKUP_OFFSITE_DIR"].Trim('"', "'") }
+
+# Очистка папки с копиями: старше KeepDays, но всегда оставляя KeepAtLeast самых свежих —
+# иначе неделя сбоев удалила бы все рабочие копии
+function Remove-OldBackups([string]$dir) {
+    $all = Get-ChildItem -Path $dir -Filter "backup_${DbName}_*.dump" | Sort-Object LastWriteTime -Descending
+    $old = $all | Select-Object -Skip $KeepAtLeast | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) }
+    foreach ($f in $old) {
+        Remove-Item $f.FullName
+        Say "🗑  Удалён старый бэкап: $($f.FullName)"
+    }
+    Say "Копий в ${dir}: $(@($all).Count - @($old).Count)"
+}
 
 $date = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $fileName = Join-Path $BackupDir "backup_${DbName}_${date}.dump"
@@ -90,13 +113,28 @@ if ($copied -ne 0 -or -not (Test-Path $fileName) -or (Get-Item $fileName).Length
 $sizeKb = [math]::Round((Get-Item $fileName).Length / 1KB, 1)
 Say "✅ Бэкап успешно создан: $fileName ($sizeKb КБ)" "Green"
 
-# 4. Очистка — только после успешной копии и всегда оставляя KeepAtLeast самых свежих:
-#    иначе неделя сбоев удалила бы все рабочие копии
-$all = Get-ChildItem -Path $BackupDir -Filter "backup_${DbName}_*.dump" | Sort-Object LastWriteTime -Descending
-$old = $all | Select-Object -Skip $KeepAtLeast | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) }
-foreach ($f in $old) {
-    Remove-Item $f.FullName
-    Say "🗑  Удалён старый бэкап: $($f.Name)"
+# 4. Очистка — только после успешной копии
+Remove-OldBackups $BackupDir
+
+# 5. Копия вне компьютера
+if ($OffsiteDir) {
+    try {
+        if (-not (Test-Path $OffsiteDir)) { New-Item -ItemType Directory -Path $OffsiteDir -ErrorAction Stop | Out-Null }
+        $dest = Join-Path $OffsiteDir (Split-Path $fileName -Leaf)
+        Copy-Item -Path $fileName -Destination $dest -ErrorAction Stop
+    } catch {
+        Say "❌ Копия вне компьютера НЕ сделана ($OffsiteDir): $($_.Exception.Message). Локальная копия есть" "Red"
+        exit 2
+    }
+    # Сверка содержимого: файл в облачной папке или на сетевом диске должен совпадать байт в байт
+    $srcHash = (Get-FileHash -Path $fileName -Algorithm SHA256).Hash
+    $dstHash = (Get-FileHash -Path $dest -Algorithm SHA256).Hash
+    if ($srcHash -ne $dstHash) {
+        Remove-Item $dest -ErrorAction SilentlyContinue
+        Say "❌ Копия вне компьютера повреждена при записи (SHA-256 не совпадает) — удалена. Локальная копия есть" "Red"
+        exit 2
+    }
+    Say "☁  Копия вне компьютера: $dest (SHA-256 совпадает)" "Green"
+    Remove-OldBackups $OffsiteDir
 }
-Say "Копий в ${BackupDir}: $(@($all).Count - @($old).Count)"
 exit 0
