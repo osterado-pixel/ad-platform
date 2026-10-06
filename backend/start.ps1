@@ -1,4 +1,4 @@
-# Запуск платформы на Windows без Docker (SQLite или PostgreSQL из backend\.env).
+﻿# Запуск платформы на Windows без Docker (SQLite или PostgreSQL из backend\.env).
 #   cd backend
 #   .\start.ps1            # первый запуск: создаст venv, поставит зависимости, .env и базу
 #   .\start.ps1 -Port 8080

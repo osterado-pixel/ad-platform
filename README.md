@@ -202,7 +202,17 @@ const { items, total } = await r.json();
 
 ## Резервные копии и обслуживание
 
-**PostgreSQL (Docker)** — копия и восстановление:
+**PostgreSQL (Docker), Windows** — скрипт `backup.ps1` в корне проекта:
+
+```powershell
+.ackup.ps1                             # боевой стек; для docker-compose.yml: -Container ad_platform_db
+```
+
+Создаёт `backupsackup_<база>_<дата>.dump`, проверяет, что копию можно прочитать, и удаляет копии
+старше 7 дней (`-KeepDays`) — только после успешной копии и всегда оставляя 3 самые свежие.
+Восстановление и ежедневный запуск через Планировщик заданий — в комментариях в начале скрипта.
+
+**PostgreSQL (Docker)** — вручную, копия и восстановление:
 
 ```bash
 docker compose exec -T db pg_dump -U adp -Fc adp > backup-$(date +%F).dump
