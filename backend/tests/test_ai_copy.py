@@ -47,7 +47,8 @@ def assert_ledger_matches(db, user_id):
     # Заморожено ровно столько, сколько зарезервировано под ещё выполняющиеся задачи
     held = db.scalar(select(func.coalesce(func.sum(Transaction.amount), 0))
                      .join(AITask, AITask.transaction_id == Transaction.id)
-                     .where(AITask.user_id == user_id, AITask.status == AITaskStatus.PROCESSING))
+                     .where(AITask.user_id == user_id,
+                            AITask.status.in_([AITaskStatus.PENDING, AITaskStatus.PROCESSING])))
     assert db.get(User, user_id).held_balance == Decimal(held)
 
 

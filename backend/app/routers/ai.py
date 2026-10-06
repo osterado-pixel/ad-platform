@@ -22,6 +22,7 @@ from app.pagination import MAX_OFFSET
 from app.schemas import AdCopyResponse, AdGenerateRequest, AITaskCreated, AITaskListResponse, AITaskResponse
 from app.services import ai_billing, gemini_service
 from app.services.ai_background import run_gemini_generation_task
+from app.services.billing import hold_user_balance
 from app.services.moderation_service import check_local_rules, moderate_text_sync
 
 log = logging.getLogger(__name__)
@@ -95,12 +96,8 @@ def start_ad_generation(
     if not gemini_service.is_enabled():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="AI-копирайтер выключен: не задан GEMINI_API_KEY")
-    # Мгновенные проверки — сразу ответом, а не через задачу: стоп-фразы (без сети) и баланс.
-    # Окончательные (OpenAI Moderation, атомарный резерв денег) выполнит сама задача
+    # Мгновенная проверка стоп-фраз (без сети); OpenAI Moderation выполнит сама задача
     check_local_rules(f"{request.product_description}\n{request.target_audience}")
-    hold = ai_billing.hold_amount()
-    if current_user.balance < hold:
-        raise ai_billing.InsufficientFunds(hold)
 
     active = db.scalar(select(func.count()).select_from(AITask).where(
         AITask.user_id == current_user.id,
@@ -109,11 +106,18 @@ def start_ad_generation(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=f"Уже выполняется {active} AI-задач — дождитесь их завершения")
 
-    with write_lock():
-        task = AITask(user_id=current_user.id)
+    # Заморозка средств и создание задачи — одной транзакцией БД: при сбое между ними не останется
+    # ни замороженных денег без задачи, ни задачи без резерва. Не хватает денег — 402
+    created: dict[str, str] = {}
+
+    def create_task(db: Session, transaction_id: int) -> None:
+        task = AITask(user_id=current_user.id, transaction_id=transaction_id)
         db.add(task)
-        db.commit()
-    task_id = task.id
+        db.flush()
+        created["id"] = task.id
+
+    hold = hold_user_balance(db, current_user.id, link=create_task)
+    task_id = created["id"]
 
     background_tasks.add_task(
         run_gemini_generation_task,
@@ -123,7 +127,7 @@ def start_ad_generation(
         target_audience=request.target_audience,
         session_factory=background_session_factory(db),
     )
-    return AITaskCreated(task_id=task_id, check_status_url=f"/api/v1/ai/tasks/{task_id}")
+    return AITaskCreated(task_id=task_id, check_status_url=f"/api/v1/ai/tasks/{task_id}", held_amount=hold.amount)
 
 
 @router.get("/tasks", response_model=AITaskListResponse)

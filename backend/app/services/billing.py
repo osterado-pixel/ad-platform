@@ -9,6 +9,7 @@
 - повторное подтверждение или возврат одного резерва не проходит «молча»: заморозка ушла бы
   в минус, и CHECK held_balance >= 0 в базе отменяет такую операцию.
 """
+from collections.abc import Callable
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -18,12 +19,15 @@ from app.services import ai_billing
 from app.services.ai_billing import Hold, InsufficientFunds  # noqa: F401 — для вызывающего кода
 
 
-def hold_user_balance(db: Session, user_id: int, amount: Decimal | None = None) -> Hold:
+def hold_user_balance(db: Session, user_id: int, amount: Decimal | None = None,
+                      link: Callable[[Session, int], None] | None = None) -> Hold:
     """Заморозка перед запуском задачи (balance → held_balance). Без суммы — максимальная цена генерации.
 
     InsufficientFunds (HTTP 402) — если доступных денег не хватает.
+    link(db, transaction_id) — выполняется в той же транзакции БД, что и заморозка (например, создаёт
+    задачу со ссылкой на резерв): не бывает заморозки без задачи или задачи без заморозки.
     """
-    return ai_billing.reserve(db, user_id, amount=amount)
+    return ai_billing.reserve(db, user_id, link=link, amount=amount)
 
 
 def confirm_user_charge(db: Session, hold: Hold, usage: dict, prompt_type: str = "gemini_ad_copy") -> Decimal:

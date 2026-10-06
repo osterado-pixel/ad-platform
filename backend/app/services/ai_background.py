@@ -3,7 +3,8 @@
 Шаги задачи: pending → processing → completed / failed.
 1. Захват: pending → processing одним UPDATE — одну задачу не выполнят дважды (два обработчика,
    повторный вызов).
-2. Модерация, резерв денег (ссылка на резерв — в задаче, в той же транзакции), генерация Gemini.
+2. Резерв денег — обычно уже сделан эндпоинтом при создании задачи (ссылка — в задаче); задача без
+   резерва резервирует сама. Затем модерация и генерация Gemini.
 3. Успех: completed + результат + расчёт по факту — одной транзакцией БД.
    Ошибка: failed + понятная причина + полный возврат резерва — одной транзакцией.
 4. Задачи, прерванные перезапуском сервера, при следующем запуске помечаются failed, а их резерв
@@ -50,6 +51,16 @@ def _fail(db: Session, task_id: str, hold: ai_billing.Hold | None, message: str)
         db.commit()
 
 
+def _existing_hold(db: Session, task_id: str, user_id: int) -> ai_billing.Hold | None:
+    """Резерв, сделанный при создании задачи (ссылка transaction_id), или None."""
+    row = db.execute(
+        select(Transaction.id, Transaction.amount)
+        .join(AITask, AITask.transaction_id == Transaction.id).where(AITask.id == task_id)
+    ).first()
+    db.rollback()
+    return ai_billing.Hold(user_id, row.amount, row.id) if row else None
+
+
 def run_gemini_generation_task(
     task_id: str,
     user_id: int,
@@ -70,14 +81,15 @@ def run_gemini_generation_task(
         if not claimed:
             return
 
-        # 2. Модерация → резерв → генерация
-        hold = None
+        # 2. Резерв (обычно уже есть) → модерация → генерация
+        hold = _existing_hold(db, task_id, user_id)
         try:
             moderate_text_sync(f"{product_description}\n{target_audience}")
 
-            def link(db: Session, transaction_id: int) -> None:
-                db.execute(update(AITask).where(AITask.id == task_id).values(transaction_id=transaction_id))
-            hold = ai_billing.reserve(db, user_id, link=link)
+            if hold is None:
+                def link(db: Session, transaction_id: int) -> None:
+                    db.execute(update(AITask).where(AITask.id == task_id).values(transaction_id=transaction_id))
+                hold = ai_billing.reserve(db, user_id, link=link)
 
             res = gemini_service.generate_ad(product_description, target_audience)
         except ContentRejected as e:
@@ -116,8 +128,9 @@ def fail_stale_tasks(session_factory: Callable[[], Session] = SessionLocal, stal
                              error_message=INTERRUPTED):
                     db.rollback()  # задача успела сдвинуться — она жива
                     continue
-                # Резерв есть только у processing-задачи, которая не дошла до расчёта
-                if status == AITaskStatus.PROCESSING and transaction_id is not None:
+                # Резерв незавершённой задачи ещё не рассчитан — возвращаем. Он бывает и у pending:
+                # эндпоинт замораживает деньги при создании задачи
+                if transaction_id is not None:
                     amount = db.scalar(select(Transaction.amount).where(Transaction.id == transaction_id))
                     if amount is not None:
                         ai_billing.refund(db, ai_billing.Hold(user_id, amount, transaction_id), INTERRUPTED[:255])

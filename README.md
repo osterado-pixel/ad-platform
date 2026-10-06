@@ -231,7 +231,8 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 
 ### Фоновая генерация
 
-`POST /api/v1/ai/generate-async` (то же тело) сразу отвечает 202 с `task_id`, статус и результат —
+`POST /api/v1/ai/generate-async` (то же тело) сразу замораживает деньги (вместе с созданием задачи —
+одной транзакцией; не хватает — 402) и отвечает 202 с `task_id` и `held_amount`, статус и результат —
 `GET /api/v1/ai/tasks/{task_id}` (только своя задача; не больше 5 незавершённых на пользователя).
 Все свои задачи, новые сверху: `GET /api/v1/ai/tasks?status=completed&page=1&size=10`.
 `app/services/ai_background.py` — та же генерация, но в фоне: задача (`ai_tasks`) проходит статусы

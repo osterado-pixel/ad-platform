@@ -412,6 +412,8 @@ class AITaskCreated(BaseModel):
     task_id: str
     status: Literal["pending"] = "pending"
     check_status_url: str
+    held_amount: Money = Field(description="Заморожено на балансе до завершения задачи")
+    message: str = "Средства зарезервированы, задача запущена"
 
 
 class AITaskResponse(BaseModel):

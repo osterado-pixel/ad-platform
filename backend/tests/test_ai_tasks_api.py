@@ -29,7 +29,8 @@ def test_full_cycle(client, db, gemini):
     r = client.post(START, json=BODY, headers=h)
     assert r.status_code == 202
     task_id = r.json()["task_id"]
-    assert r.json() == {"task_id": task_id, "status": "pending", "check_status_url": TASK.format(task_id)}
+    assert r.json() == {"task_id": task_id, "status": "pending", "check_status_url": TASK.format(task_id),
+                        "held_amount": 0.03, "message": "Средства зарезервированы, задача запущена"}
     assert seen["status"] == "processing" and seen["result"] is None  # пока модель «думает»
 
     body = client.get(r.json()["check_status_url"], headers=h).json()
@@ -137,3 +138,59 @@ def test_list_pages(client, db, gemini):
     for bad in ({"page": 0}, {"size": 0}, {"size": 101}, {"page": 100_000, "size": 100}):
         assert client.get(LIST, params=bad, headers=h).status_code == 422
     assert client.get(LIST).status_code == 401
+
+
+# --- Заморозка при создании задачи ---
+def test_funds_held_at_creation_and_reused(client, db, gemini, monkeypatch):
+    """Эндпоинт замораживает деньги вместе с созданием задачи; фоновая задача второй раз не замораживает."""
+    from app.models import Transaction, TransactionType
+    from app.services import ai_background
+    from tests.test_ai_copy import held_of
+    user, h = user_with_balance(db, "10")
+    from app.routers import ai as ai_router
+    monkeypatch.setattr(ai_router, "run_gemini_generation_task", lambda **kw: None)  # «очередь не дошла»
+
+    task_id = client.post(START, json=BODY, headers=h).json()["task_id"]
+    db.expire_all()
+    task = db.get(AITask, task_id)
+    assert task.status == AITaskStatus.PENDING and task.transaction_id is not None
+    assert (balance_of(db, user.id), held_of(db, user.id)) == (Decimal("9.97"), Decimal("0.03"))
+    assert_ledger_matches(db, user.id)
+
+    # Фоновая задача использует этот резерв: в журнале одна операция ai_spend, списано по факту
+    from sqlalchemy.orm import sessionmaker
+    ai_background.run_gemini_generation_task(task_id, user.id, BODY["product_description"], BODY["target_audience"],
+                                             session_factory=sessionmaker(bind=db.get_bind()))
+    db.expire_all()
+    spends = db.scalars(select(Transaction).where(Transaction.type == TransactionType.AI_SPEND)).all()
+    assert len(spends) == 1 and spends[0].id == task.transaction_id and spends[0].amount == Decimal("0.01")
+    assert (balance_of(db, user.id), held_of(db, user.id)) == (Decimal("9.99"), Decimal("0"))
+    assert_ledger_matches(db, user.id)
+
+
+def test_background_moderation_failure_refunds_creation_hold(client, db, gemini, monkeypatch):
+    from app.services import moderation_service
+    monkeypatch.setattr(moderation_service, "find_openai_violations", lambda text: ["угрозы"])
+    user, h = user_with_balance(db, "10")
+    task_id = client.post(START, json=BODY, headers=h).json()["task_id"]
+    body = client.get(TASK.format(task_id), headers=h).json()
+    assert body["status"] == "failed" and "угрозы" in body["error"]
+    assert gemini.calls == [] and balance_of(db, user.id) == Decimal("10")
+    assert_ledger_matches(db, user.id)
+
+
+def test_stale_pending_task_with_hold_refunded(client, db, gemini, monkeypatch):
+    """Задача создана (деньги заморожены), но так и не начала выполняться — очистка возвращает резерв."""
+    from app.routers import ai as ai_router
+    from app.services.ai_background import fail_stale_tasks
+    from sqlalchemy.orm import sessionmaker
+    from tests.test_ai_background import make_old
+    from tests.test_ai_copy import held_of
+    monkeypatch.setattr(ai_router, "run_gemini_generation_task", lambda **kw: None)
+    user, h = user_with_balance(db, "10")
+    task_id = client.post(START, json=BODY, headers=h).json()["task_id"]
+    make_old(db, task_id)
+    assert fail_stale_tasks(sessionmaker(bind=db.get_bind())) == 1
+    assert (balance_of(db, user.id), held_of(db, user.id)) == (Decimal("10"), Decimal("0"))
+    assert client.get(TASK.format(task_id), headers=h).json()["status"] == "failed"
+    assert_ledger_matches(db, user.id)
