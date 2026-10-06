@@ -94,7 +94,7 @@ jobs:
       - name: Установка Chromium
         run: python -m playwright install --with-deps chromium
       - name: Сквозные тесты в браузере
-        run: python -m pytest -m e2e -v
+        run: python -m pytest -m e2e -v --no-cov  # проверяют интерфейс, а не покрытие (порог 80% — для обычных тестов)
       - name: Скриншоты при сбое браузерных тестов
         if: failure()
         uses: actions/upload-artifact@v4
