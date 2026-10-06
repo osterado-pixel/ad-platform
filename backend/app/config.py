@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     allowed_hosts: str = "*"
 
     @property
+    def GEMINI_API_KEY(self) -> str:  # noqa: N802 — имя из учебной инструкции, то же, что gemini_api_key
+        return self.gemini_api_key
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
