@@ -63,3 +63,80 @@ def test_async_name_from_tutorial(monkeypatch):
     monkeypatch.setattr(ai_cleanup, "fail_stale_tasks", lambda factory, stale_after: calls.append(stale_after) or 3)
     assert asyncio.run(ai_cleanup.cleanup_stuck_ai_tasks(15)) == 3
     assert calls[0].total_seconds() == 15 * 60
+
+
+# --- Периодическая очистка (schedule_task_cleanup) и lifespan ---
+def _run_scheduler(seconds, **kwargs):
+    async def main():
+        task = asyncio.create_task(ai_cleanup.schedule_task_cleanup(**kwargs))
+        await asyncio.sleep(seconds)
+        task.cancel()
+        results = await asyncio.gather(task, return_exceptions=True)
+        return task, results
+    return asyncio.run(main())
+
+
+def test_scheduler_runs_periodically_and_stops(monkeypatch):
+    calls = []
+
+    async def fake_cleanup(timeout_minutes):
+        calls.append(timeout_minutes)
+        return 0
+    monkeypatch.setattr(ai_cleanup, "cleanup_stuck_ai_tasks", fake_cleanup)
+    task, results = _run_scheduler(0.25, interval_seconds=0.05, timeout_minutes=7)
+    assert len(calls) >= 3 and set(calls) == {7}
+    assert task.cancelled()  # остановка доходит до вызвавшего — сервер не ждёт вечно
+    assert isinstance(results[0], asyncio.CancelledError)
+
+
+def test_scheduler_survives_errors(monkeypatch, caplog):
+    calls = []
+
+    async def flaky_cleanup(timeout_minutes):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("сбой")
+        return 0
+    monkeypatch.setattr(ai_cleanup, "cleanup_stuck_ai_tasks", flaky_cleanup)
+    _run_scheduler(0.25, interval_seconds=0.05, timeout_minutes=10)
+    assert len(calls) >= 2  # после ошибки цикл продолжил работу
+    assert "Ошибка в цикле очистки" in caplog.text and "RuntimeError" in caplog.text  # с подробностями
+
+
+def test_scheduler_uses_settings(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "ai_cleanup_interval_seconds", 0.05)
+    monkeypatch.setattr(settings, "ai_task_timeout_minutes", 12)
+    calls = []
+
+    async def fake_cleanup(timeout_minutes):
+        calls.append(timeout_minutes)
+        return 0
+    monkeypatch.setattr(ai_cleanup, "cleanup_stuck_ai_tasks", fake_cleanup)
+    _run_scheduler(0.2)
+    assert calls and set(calls) == {12}
+
+
+def test_lifespan_cleans_on_start_and_stops_loop(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.config import settings
+    from app.main import app
+    calls, loop_state = [], {}
+
+    async def fake_cleanup(timeout_minutes):
+        calls.append(timeout_minutes)
+        return 0
+
+    async def fake_loop():
+        loop_state["started"] = True
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            loop_state["stopped"] = True
+            raise
+    monkeypatch.setattr(ai_cleanup, "cleanup_stuck_ai_tasks", fake_cleanup)
+    monkeypatch.setattr(ai_cleanup, "schedule_task_cleanup", fake_loop)
+    with TestClient(app):
+        assert calls == [settings.ai_task_timeout_minutes]  # очистка — сразу при запуске
+    assert loop_state == {"started": True, "stopped": True}  # цикл запущен и остановлен вместе с сервером

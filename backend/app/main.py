@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,7 +9,6 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -19,15 +19,21 @@ from app.routers import ads, ai, auth, campaigns, placements, stats, users, wall
 
 # Схема БД управляется миграциями Alembic: `alembic upgrade head` из папки backend/
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Фоновые AI-задачи, прерванные прошлым перезапуском: закрываем и возвращаем зарезервированные деньги
-    from app.services.ai_background import fail_stale_tasks
-    try:
-        fail_stale_tasks()
-    except SQLAlchemyError as e:  # например, миграции ещё не применены — сервер всё равно запускается
-        logging.getLogger(__name__).warning("Проверка прерванных AI-задач пропущена: %s", e)
+    from app.services.ai_cleanup import cleanup_stuck_ai_tasks, schedule_task_cleanup
+    # 1. Сразу при запуске — задачи, прерванные прошлым перезапуском (резерв денег возвращается).
+    #    Ошибка БД (например, миграции ещё не применены) не мешает серверу запуститься
+    await cleanup_stuck_ai_tasks(timeout_minutes=settings.ai_task_timeout_minutes)
+    # 2. Затем — периодически, пока сервер работает
+    logger.info("Запуск фоновой очистки зависших AI-задач (каждые %s с)", settings.ai_cleanup_interval_seconds)
+    cleanup_bg_task = asyncio.create_task(schedule_task_cleanup())
     yield
+    cleanup_bg_task.cancel()
+    await asyncio.gather(cleanup_bg_task, return_exceptions=True)
 
 
 app = FastAPI(

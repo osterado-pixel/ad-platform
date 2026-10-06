@@ -16,6 +16,7 @@ from datetime import timedelta
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import SessionLocal
 from app.services.ai_background import fail_stale_tasks
 
@@ -42,3 +43,24 @@ def cleanup_stuck_ai_tasks_sync(timeout_minutes: int = 10,
 async def cleanup_stuck_ai_tasks(timeout_minutes: int = 10) -> int:
     """Имя и async-вызов из инструкции. Работа с БД — в отдельном потоке, сервер не блокируется."""
     return await asyncio.to_thread(cleanup_stuck_ai_tasks_sync, timeout_minutes)
+
+
+async def schedule_task_cleanup(interval_seconds: int | None = None, timeout_minutes: int | None = None) -> None:
+    """Периодическая очистка внутри процесса сервера (без отдельного Celery Beat).
+
+    Запускается из lifespan в app/main.py и останавливается при остановке сервера (CancelledError).
+    При нескольких процессах сервера (WEB_WORKERS) цикл идёт в каждом — это безопасно: задача
+    закрывается атомарно и только один раз, резерв возвращается один раз.
+    """
+    interval = interval_seconds if interval_seconds is not None else settings.ai_cleanup_interval_seconds
+    timeout = timeout_minutes if timeout_minutes is not None else settings.ai_task_timeout_minutes
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await cleanup_stuck_ai_tasks(timeout_minutes=timeout)
+        except asyncio.CancelledError:
+            logger.info("Фоновая очистка AI-задач остановлена")
+            raise  # отмена должна дойти до вызвавшего, иначе остановка сервера «зависнет» на ожидании
+        except Exception:
+            # Любая ошибка — в лог с подробностями, цикл продолжает работу
+            logger.exception("Ошибка в цикле очистки AI-задач")

@@ -179,6 +179,7 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 | `GEMINI_PRICE_INPUT_PER_1M` / `GEMINI_PRICE_OUTPUT_PER_1M` | `0.75` / `3.75` | цены модели, $ за 1 млн токенов; у 3.8 Flash с 01.01.2027 — `1.50` / `7.50` |
 | `AI_MARKUP` | `1.5` | наценка платформы к себестоимости AI-запроса |
 | `OPENAI_API_KEY` | — (выключено) | ключ OpenAI: бесплатный Moderation API в быстрой модерации текста |
+| `AI_CLEANUP_INTERVAL_SECONDS` / `AI_TASK_TIMEOUT_MINUTES` | `300` / `10` | как часто искать зависшие AI-задачи и через сколько минут без изменений задача считается зависшей (не меньше 2) |
 | `USD_RATE` | `1` | сколько единиц валюты баланса стоит 1 $ (баланс в рублях — курс, например `90`) |
 
 **За nginx/балансировщиком** обязательно передавайте реальный IP посетителя (`X-Forwarded-For`) и
@@ -236,7 +237,9 @@ pending → processing → completed / failed, результат или пон�
 Оплата та же (`app/services/ai_billing.py`): резерв → расчёт по факту, при ошибке — полный возврат.
 Одна задача не выполняется дважды. Если сервер перезапустился посреди генерации, при следующем
 запуске такие задачи (без изменений дольше 10 минут) помечаются failed, а резерв возвращается.
-То же можно вызвать в любой момент: `cleanup_stuck_ai_tasks(timeout_minutes)` из `app/services/ai_cleanup.py`.
+Пока сервер работает, та же проверка повторяется каждые `AI_CLEANUP_INTERVAL_SECONDS` (300 с) — прямо внутри
+процесса сервера, без отдельного Celery Beat; порог «зависания» — `AI_TASK_TIMEOUT_MINUTES` (10 мин).
+Вручную: `cleanup_stuck_ai_tasks(timeout_minutes)` из `app/services/ai_cleanup.py`.
 
 ## Быстрая модерация текста
 

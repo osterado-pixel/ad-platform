@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # Сколько единиц валюты баланса стоит 1 $ (баланс в долларах — 1, в рублях — курс, например 90)
     usd_rate: Decimal = Field(default=Decimal("1"), gt=0)
 
+    # Очистка «зависших» AI-задач (с возвратом резерва): как часто проверять и какую задачу
+    # считать зависшей. Порог — не меньше 2 минут, иначе закрывались бы работающие задачи
+    ai_cleanup_interval_seconds: int = Field(default=300, ge=10)
+    ai_task_timeout_minutes: int = Field(default=10, ge=2)
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 
