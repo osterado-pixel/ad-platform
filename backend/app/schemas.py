@@ -192,6 +192,18 @@ class CampaignAdminResponse(CampaignResponse):
     """Для админа: кто владелец и на какой площадке — для очереди модерации."""
     owner_email: str
     placement_name: str
+    # Подсказка AI-проверки (только для админа; рекламодатель видит лишь итог модерации)
+    ai_verdict: Literal["approve", "review", "reject", "error"] | None = None
+    ai_risk: Literal["low", "medium", "high"] | None = None
+    ai_reasons: list[str] | None = None
+    ai_summary: str | None = None
+    ai_checked_at: UtcDatetime | None = None
+
+
+class AIStatus(BaseModel):
+    enabled: bool
+    model: str
+    auto_reject: bool
 
 
 class CampaignUpdate(BaseModel):

@@ -51,6 +51,10 @@ services:
       WEB_WORKERS: ${WEB_WORKERS:-2}
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       CLICK_DEDUP_MINUTES: ${CLICK_DEDUP_MINUTES:-10}
+      # AI-проверка объявлений: без ключа выключена, модерация только вручную
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
+      AI_AUTO_REJECT: ${AI_AUTO_REJECT:-false}
     volumes:
       - prod_app_data:/app/data
     depends_on:

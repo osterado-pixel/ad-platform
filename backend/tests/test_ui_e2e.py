@@ -22,6 +22,7 @@ playwright_api = pytest.importorskip("playwright.sync_api")
 
 BACKEND = Path(__file__).resolve().parent.parent
 PASSWORD = "password123"
+SERVER_DB = {}  # адрес БД тестового сервера — для тестов, которым нужно подготовить данные напрямую
 
 
 def _free_port() -> int:
@@ -39,7 +40,9 @@ def server():
     env = {**os.environ,
            "DATABASE_URL": db_url,
            "SECRET_KEY": "e2e-secret-key-0123456789abcdefghijklmnopq",
-           "BCRYPT_ROUNDS": "4"}
+           "BCRYPT_ROUNDS": "4",
+           "ANTHROPIC_API_KEY": ""}  # без обращений к платному API
+    SERVER_DB["url"] = db_url
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env,
                    check=True, capture_output=True)
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port),
@@ -282,4 +285,51 @@ def test_change_password_in_ui(server, browser):
     page.click("nav a:has-text('Кошелёк')")
     page.wait_for_selector("h1:has-text('Кошелёк')")
     assert httpx.get(server + "/api/v1/auth/me", headers={"Authorization": f"Bearer {other}"}).status_code == 401
+    assert errors == [], errors
+
+
+def test_ai_hint_in_moderation_queue(server, browser):
+    """Подсказка AI видна в очереди модерации; текст модели выводится как текст, не как HTML."""
+    from datetime import datetime, timezone
+
+    import httpx2 as httpx
+    from sqlalchemy import create_engine, update
+
+    from app.models import Campaign
+
+    errors, base = [], server
+    httpx.post(base + "/api/v1/auth/register", json={"email": "ai@e2e.ru", "password": PASSWORD})
+    token = httpx.post(base + "/api/v1/auth/login",
+                       data={"username": "ai@e2e.ru", "password": PASSWORD}).json()["access_token"]
+    pid = httpx.get(base + "/api/v1/placements").json()["items"][0]["id"]
+    with httpx.Client(headers={"Authorization": f"Bearer {token}"}) as c:
+        cid = c.post(base + "/api/v1/campaigns", json={
+            "placement_id": pid, "title": "Заработок без вложений", "target_url": "https://example.com/"}).json()["id"]
+        assert c.post(f"{base}/api/v1/campaigns/{cid}/submit").status_code == 200
+
+    # Ключа API у тестового сервера нет — результат проверки записываем как будто его сохранил фон
+    engine = create_engine(SERVER_DB["url"])
+    with engine.begin() as conn:
+        conn.execute(update(Campaign).where(Campaign.id == cid).values(
+            ai_verdict="reject", ai_risk="high", ai_summary="Похоже на финансовую пирамиду",
+            ai_reasons=["Гарантированный доход", "<img src=x onerror=alert('XSS')>"],
+            ai_checked_at=datetime.now(timezone.utc)))
+    engine.dispose()
+
+    admin = new_page(browser, errors)
+    login(admin, base, "admin@e2e.ru")
+    admin.click("nav a:has-text('Модерация')")
+    card = admin.locator(".card", has_text="Заработок без вложений")
+    hint = card.locator(".notice.error")
+    playwright_api.expect(hint).to_contain_text("ИИ: рекомендует отклонить · риск высокий")
+    playwright_api.expect(hint).to_contain_text("Похоже на финансовую пирамиду")
+    playwright_api.expect(hint.locator("li")).to_have_text(
+        ["Гарантированный доход", "<img src=x onerror=alert('XSS')>"])
+    assert hint.locator("img").count() == 0
+    # AI выключен — кнопки перепроверки нет, решение за модератором
+    assert card.locator("button:has-text('ИИ')").count() == 0
+
+    card.locator("input").fill("Мошенничество")
+    card.locator("button:has-text('Отклонить')").click()
+    admin.wait_for_selector("text=Очередь пуста")
     assert errors == [], errors

@@ -1,15 +1,18 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from app import ai
 from app.auth import get_current_user, require_admin
+from app.config import settings
 from app.database import get_db
 from app.models import Campaign, CampaignStatus, Placement, User, UserRole
+from app.moderation import run_ai_review
 from app.pagination import fetch_page_with_total, limit_param, offset_param
 from app.schemas import (
-    CampaignAdminResponse, CampaignCreate, CampaignModerate, CampaignResponse, CampaignUpdate,
+    AIStatus, CampaignAdminResponse, CampaignCreate, CampaignModerate, CampaignResponse, CampaignUpdate,
     PaginatedResponse,
 )
 
@@ -71,7 +74,15 @@ def list_campaigns(
         query = query.where(Campaign.status == status_filter)
     # Очередь модерации — по порядку поступления, остальное — новые сверху
     order = Campaign.id.asc() if status_filter == CampaignStatus.MODERATION else Campaign.id.desc()
-    return fetch_page_with_total(db, query.order_by(order), limit, offset)
+    page = fetch_page_with_total(db, query.order_by(order), limit, offset)
+    if current_user.role != UserRole.ADMIN:
+        # Подсказка AI — только для модератора: рекламодатель видит лишь итог модерации
+        hidden = dict.fromkeys(_AI_FIELDS)
+        page["items"] = [CampaignAdminResponse.model_validate(c).model_copy(update=hidden) for c in page["items"]]
+    return page
+
+
+_AI_FIELDS = ("ai_verdict", "ai_risk", "ai_reasons", "ai_summary", "ai_checked_at")
 
 
 @router.get("/my", response_model=PaginatedResponse[CampaignResponse])
@@ -85,6 +96,18 @@ def get_my_campaigns(
     # без неё база может менять порядок строк, и страницы «перемешаются»
     query = select(Campaign).where(Campaign.user_id == current_user.id).order_by(Campaign.id.desc())
     return fetch_page_with_total(db, query, limit, offset)
+
+
+@router.get("/ai-status", response_model=AIStatus)
+def ai_status(_admin: User = Depends(require_admin)):
+    """Включена ли AI-проверка объявлений (для админ-панели)."""
+    return AIStatus(enabled=ai.is_enabled(), model=settings.ai_model, auto_reject=settings.ai_auto_reject)
+
+
+def _session_factory(db: Session):
+    # Отдельные сессии для фоновой проверки — к той же базе, что и запрос
+    # (в тестах — к тестовой). Сессия запроса к тому времени уже закрыта
+    return sessionmaker(bind=db.get_bind(), autoflush=False)
 
 
 def _get_campaign_for_update(db: Session, campaign_id: int, user_id: int | None = None) -> Campaign:
@@ -107,6 +130,7 @@ SUBMITTABLE = {CampaignStatus.DRAFT, CampaignStatus.REJECTED}
 @router.post("/{campaign_id}/submit", response_model=CampaignResponse)
 def submit_campaign_for_review(
     campaign_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -120,8 +144,14 @@ def submit_campaign_for_review(
 
     campaign.status = CampaignStatus.MODERATION
     campaign.rejection_reason = None
+    # Результат прошлой AI-проверки относится к прежнему содержимому — сбрасываем
+    campaign.ai_verdict = campaign.ai_risk = campaign.ai_reasons = None
+    campaign.ai_summary = campaign.ai_checked_at = None
     db.commit()
     db.refresh(campaign)
+    if ai.is_enabled():
+        # В фоне, после ответа: рекламодатель не ждёт модель (это секунды)
+        background_tasks.add_task(run_ai_review, _session_factory(db), campaign.id)
     return campaign
 
 
@@ -264,3 +294,27 @@ def delete_campaign(campaign_id: int, db: Session = Depends(get_db),
     db.delete(campaign)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- AI-проверка по кнопке администратора (повторно или если фоновая не удалась) ---
+@router.post("/{campaign_id}/ai-review", response_model=CampaignAdminResponse)
+def ai_review_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    if not ai.is_enabled():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="AI-проверка выключена: не задан ANTHROPIC_API_KEY")
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Кампания не найдена")
+    if campaign.status != CampaignStatus.MODERATION:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="AI-проверка — только для кампаний на модерации")
+    db.rollback()  # сетевой запрос к модели — без открытой транзакции
+    run_ai_review(_session_factory(db), campaign_id)
+    return db.scalar(
+        select(Campaign).options(selectinload(Campaign.owner), selectinload(Campaign.placement))
+        .where(Campaign.id == campaign_id).execution_options(populate_existing=True)
+    )

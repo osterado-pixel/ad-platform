@@ -150,6 +150,7 @@ textarea { min-height: 72px; resize: vertical; }
 .notice.warn { background: var(--warn-soft); color: var(--warn); }
 .notice.error { background: var(--danger-soft); color: var(--danger); }
 .notice.info { background: var(--accent-soft); color: var(--accent); }
+.notice.ok { background: var(--ok-soft); color: var(--ok); }
 
 /* --- Вход --- */
 .auth { max-width: 380px; margin: 8vh auto; padding: 0 16px; }

@@ -10,6 +10,9 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdefghijklmnop"
 # Тесты НИКОГДА не должны трогать рабочую базу: если запрос по ошибке пройдёт мимо
 # фикстуры db, он попадёт в пустую БД в памяти и упадёт, а не изменит app.db
 os.environ["DATABASE_URL"] = "sqlite://"
+# Ключ Anthropic из backend/.env в тестах не используется: ни один тест не должен
+# обращаться к настоящему API (это платно). AI-тесты включают его подменой модели
+os.environ["ANTHROPIC_API_KEY"] = ""
 # Минимальная стоимость bcrypt: в тестах стойкость к перебору не нужна, а скорость — да
 os.environ.setdefault("BCRYPT_ROUNDS", "4")
 

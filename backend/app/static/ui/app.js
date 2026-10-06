@@ -678,8 +678,38 @@ async function walletView() {
 }
 
 // ---------- Админ: модерация ----------
+// Подсказка AI-проверки в карточке модерации. Решение всё равно за модератором
+const AI_VERDICT = {
+  approve: ["ok", "ИИ: можно одобрить"], review: ["warn", "ИИ: нужна проверка человеком"],
+  reject: ["error", "ИИ: рекомендует отклонить"], error: ["info", "ИИ: проверка не выполнена"],
+};
+const AI_RISK = { low: "низкий", medium: "средний", high: "высокий" };
+
+function aiHint(c, aiEnabled, onRecheck) {
+  if (!aiEnabled && !c.ai_verdict) return null;
+  const recheck = aiEnabled ? h("button", { class: "small" }, c.ai_verdict ? "Перепроверить ИИ" : "Проверить ИИ") : null;
+  if (recheck) recheck.onclick = async () => {
+    if (await run(recheck, () => api("POST", `/campaigns/${c.id}/ai-review`), "Проверка ИИ выполнена")) onRecheck();
+  };
+  if (!c.ai_verdict) {
+    return h("div", { class: "notice info row between" },
+      h("span", {}, "ИИ ещё не проверил объявление (проверка идёт в фоне несколько секунд)"), recheck);
+  }
+  const [kind, label] = AI_VERDICT[c.ai_verdict] || ["info", `ИИ: ${c.ai_verdict}`];
+  return h("div", { class: `notice ${kind} stack` },
+    h("div", { class: "row between" },
+      h("b", {}, label, c.ai_risk ? ` · риск ${AI_RISK[c.ai_risk] || c.ai_risk}` : ""),
+      h("span", { class: "small" }, c.ai_checked_at ? dateTime(c.ai_checked_at) : "", " ", recheck)),
+    c.ai_summary ? h("div", {}, c.ai_summary) : null,
+    c.ai_reasons && c.ai_reasons.length ? h("ul", { class: "small", style: "margin:0;padding-left:18px" },
+      c.ai_reasons.map((r) => h("li", {}, r))) : null);
+}
+
 async function moderationView() {
-  const page = await api("GET", "/campaigns?status=moderation&limit=200");
+  const [page, aiStatus] = await Promise.all([
+    api("GET", "/campaigns?status=moderation&limit=200"),
+    api("GET", "/campaigns/ai-status").catch(() => ({ enabled: false })),  // старый сервер — без AI
+  ]);
   const queue = page.items;
   const wrap = h("div");
   const reload = async () => wrap.replaceWith(await moderationView());
@@ -708,6 +738,7 @@ async function moderationView() {
         h("div", {}, h("b", {}, `#${c.id} `), c.title),
         h("span", { class: "small muted" }, c.owner_email, " · ", c.placement_name, " · ", dateTime(c.created_at))),
       adPreview(c),
+      aiHint(c, aiStatus.enabled, reload),
       h("div", { class: "small" }, "Ссылка: ",
         h("a", { href: c.target_url, target: "_blank", rel: "noopener noreferrer", class: "break" }, c.target_url)),
       c.image_url ? h("div", { class: "small muted break" }, "Картинка: ", c.image_url) : null,
