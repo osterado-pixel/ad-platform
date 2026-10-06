@@ -324,6 +324,39 @@ const { items, total } = await r.json();
 `Content-Security-Policy: default-src 'none'`, у `/app` — строгий CSP (только свои скрипты);
 по HTTPS — `Strict-Transport-Security`.
 
+**AI-копирайтер в React.** Готовый хук — [`examples/react/useAdTask.js`](examples/react/useAdTask.js)
+(скопируйте в проект): запускает `POST /ai/generate-async`, опрашивает `GET /ai/tasks/{id}`
+(1 → 4 с, до 150 с), прекращает опрос при уходе со страницы, отдаёт причину ошибки от сервера
+(402 — мало денег, 422 — текст не прошёл модерацию, 429 — много задач, 503 — выключен).
+
+```jsx
+import { useAdTask } from "./useAdTask";
+
+function AdGenerator({ token, onUse }) {
+  const [product, setProduct] = useState("");
+  const task = useAdTask({ apiUrl: "https://ads.example.com/api/v1", token });
+  return (
+    <div>
+      <textarea value={product} onChange={(e) => setProduct(e.target.value)} />
+      <button disabled={task.isRunning || product.trim().length < 10} onClick={() => task.start(product)}>
+        Сгенерировать
+      </button>
+      {task.isRunning && <progress />} {task.isRunning && `${task.elapsed} с`}
+      {(task.status === "failed" || task.status === "timeout") && <p className="error">{task.error}</p>}
+      {task.variants?.map((v) => (
+        <div key={v.title}>
+          <b>{v.title}</b> <p>{v.text}</p> <small>{v.cta}</small>
+          <button onClick={() => onUse(v)}>Использовать</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+Текст модели выводите как текст (`{v.title}` в JSX экранируется сам), не через
+`dangerouslySetInnerHTML`.
+
 ## Резервные копии и обслуживание
 
 **PostgreSQL (Docker), Windows** — скрипт `backup.ps1` в корне проекта:
