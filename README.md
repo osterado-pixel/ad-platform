@@ -89,7 +89,18 @@ API наружу не открыт — только через Caddy, поэто
 **Celery-воркер** (`celery_worker`) — отдельный процесс из того же образа, выполняет фоновые задачи из
 очереди Redis (`app/worker.py`). Настройки (база, ключи, цены, курс) у него те же, что у `api`, —
 общий блок `x-app-env` в начале файла. Стартует после `api`, то есть после применения миграций.
-Число одновременных задач — `CELERY_CONCURRENCY` (2). Логи: `docker compose -f docker-compose.prod.yml logs -f celery_worker`.
+Число одновременных задач — `CELERY_CONCURRENCY` (2).
+
+Celery-воркер локально на Windows (без Docker для приложения):
+
+```powershell
+# 1. Redis для разработки — один раз; доступен только с этого компьютера (127.0.0.1)
+docker run -d --name ad_platform_redis_dev --restart unless-stopped -p 127.0.0.1:6379:6379 redis:7-alpine
+# 2. Воркер — из папки backend, через Python из venv (просто `celery` без активации venv не найдётся)
+.\venv\Scripts\python.exe -m celery -A app.worker.celery_app worker --loglevel=info -P solo --without-mingle --without-gossip
+```
+
+`-P solo` обязателен на Windows: обычный режим Celery (prefork) там не работает. Логи: `docker compose -f docker-compose.prod.yml logs -f celery_worker`.
 
 ### Вручную (любая ОС)
 
