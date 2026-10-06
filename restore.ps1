@@ -58,7 +58,19 @@ if (-not $BackupFile) {
     if (-not $latest) { Fail "В .\backups нет копий базы $DbName. Укажите файл: -BackupFile путь" }
     $BackupFile = $latest.FullName
 }
-if (-not (Test-Path $BackupFile)) { Fail "Файл бэкапа $BackupFile не найден!" }
+if (-not (Test-Path $BackupFile)) {
+    Write-Host "❌ Файл бэкапа $BackupFile не найден!" -ForegroundColor Red
+    $available = Get-ChildItem (Join-Path $PSScriptRoot "backups") -Filter "*.dump" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending
+    if ($available) {
+        Write-Host "Доступные копии (новые сверху; backup.ps1 создаёт файлы .dump, а не .sql.gz):"
+        $available | ForEach-Object { Write-Host "   .\backups\$($_.Name)   $($_.LastWriteTime)" }
+        Write-Host "Самую свежую можно восстановить без параметров: .\restore.ps1"
+    } else {
+        Write-Host "В .\backups копий нет — создайте: .\backup.ps1"
+    }
+    exit 1
+}
 $BackupFile = (Resolve-Path $BackupFile).Path
 
 # --- Контейнеры ---
