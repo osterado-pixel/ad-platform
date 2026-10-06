@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 
+    # Удаление старых служебных записей раз в сутки (app/maintenance.py). Деньги и журналы не удаляются
+    auto_purge: bool = True
+    clicks_retention_days: int = Field(default=30, ge=1)
+    ai_tasks_retention_days: int = Field(default=90, ge=1)
+
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
 

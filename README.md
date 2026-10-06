@@ -399,14 +399,15 @@ docker compose exec -T db pg_restore -U adp -d adp --clean --if-exists < backup-
 
 Делайте копию ежедневно (cron / Планировщик заданий) и храните вне сервера.
 
-**Очистка служебных записей** — раз в сутки (`docker compose exec api ...` в Docker):
+**Очистка служебных записей** — сервер делает её сам, раз в сутки (первый раз — сразу после запуска):
+клики старше `CLICKS_RETENTION_DAYS` (30 дн.; нужны только для защиты от повторов — статистика по дням
+хранится отдельно), попытки входа старше суток и завершённые AI-задачи старше `AI_TASKS_RETENTION_DAYS`
+(90 дн.). **Никогда не удаляются**: незавершённые AI-задачи (за ними может быть замороженный резерв),
+журнал денег и журнал AI-запросов (`ai_logs`). Выключить — `AUTO_PURGE=false`. Вручную или с другими сроками:
 
 ```bash
-python -m app.cli purge --clicks-days 30
+python -m app.cli purge --clicks-days 30 --ai-tasks-days 90
 ```
-
-Удаляет записи о кликах старше 30 дней (они нужны только для защиты от повторов; статистика по дням
-и журнал денег не затрагиваются) и старые попытки входа.
 
 ## Безопасность
 
@@ -426,7 +427,7 @@ python -m app.cli make-admin user@example.com         # сделать адми�
 python -m app.cli add-balance user@example.com 1000   # пополнить баланс
 python -m app.cli set-password user@example.com       # сбросить пароль (сеансы завершатся)
 python -m app.cli backup-db backups                   # копия SQLite
-python -m app.cli purge --clicks-days 30              # очистка служебных записей
+python -m app.cli purge --ai-tasks-days 90           # очистка служебных записей (сервер — и сам)
 alembic upgrade head                                  # применить миграции базы
 ```
 

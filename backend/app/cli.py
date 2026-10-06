@@ -5,7 +5,7 @@
     python -m app.cli add-balance user@mail.ru 1000
     python -m app.cli set-password user@mail.ru         # сброс забытого пароля (спросит новый)
     python -m app.cli backup-db backups/                # копия SQLite на ходу
-    python -m app.cli purge --clicks-days 30            # очистка служебных записей
+    python -m app.cli purge --clicks-days 30            # очистка служебных записей (сервер — и сам, раз в сутки)
 """
 import argparse
 import getpass
@@ -13,11 +13,11 @@ import os
 import sys
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 
 from app.database import SessionLocal
 from app.ledger import add_transaction
-from app.models import AuthAttempt, Click, TransactionType, User, UserRole
+from app.models import TransactionType, User, UserRole
 
 
 def ask_password(prompt: str = "Пароль: ") -> str | None:
@@ -171,23 +171,21 @@ def backup_db(target_dir: str) -> int:
     return 0
 
 
-def purge(clicks_days: int) -> int:
-    """Удаляет служебные записи: клики старше N дней (нужны только для защиты от повторов —
-    статистика хранится по дням, деньги в журнале транзакций) и старые попытки входа."""
-    import time
-
+def purge(clicks_days: int | None = None, ai_tasks_days: int | None = None) -> int:
+    """Удаляет старые служебные записи (подробно — app/maintenance.py). Сервер делает это и сам,
+    раз в сутки; команда — для разового запуска или других сроков."""
     from app.config import settings
+    from app.maintenance import purge_old_records
 
-    min_days = max(1, -(-settings.click_dedup_minutes // (24 * 60)))
-    if clicks_days < min_days:
-        print(f"Нельзя меньше {min_days} дн.: записи нужны для защиты от повторных кликов")
+    clicks_days = settings.clicks_retention_days if clicks_days is None else clicks_days
+    ai_tasks_days = settings.ai_tasks_retention_days if ai_tasks_days is None else ai_tasks_days
+    try:
+        with SessionLocal() as db:
+            r = purge_old_records(db, clicks_days, ai_tasks_days)
+    except ValueError as e:
+        print(f"Нельзя: {e}")
         return 1
-    now = int(time.time())
-    with SessionLocal() as db:
-        clicks = db.execute(delete(Click).where(Click.time_window < now // 60 - clicks_days * 24 * 60)).rowcount
-        attempts = db.execute(delete(AuthAttempt).where(AuthAttempt.ts < now - 24 * 3600)).rowcount
-        db.commit()
-    print(f"Удалено: кликов {clicks}, попыток входа {attempts}")
+    print(f"Удалено: кликов {r.clicks}, попыток входа {r.auth_attempts}, завершённых AI-задач {r.ai_tasks}")
     return 0
 
 
@@ -207,8 +205,11 @@ def main() -> int:
     sp.add_argument("--password", "-p", default=None, help="Новый пароль (иначе спросит дважды)")
     bk = sub.add_parser("backup-db", help="Резервная копия SQLite (без остановки сервера)")
     bk.add_argument("target_dir", nargs="?", default="backups")
-    pg = sub.add_parser("purge", help="Удалить старые служебные записи (клики, попытки входа)")
-    pg.add_argument("--clicks-days", type=int, default=30, help="Хранить клики N дней (по умолчанию 30)")
+    pg = sub.add_parser("purge", help="Удалить старые служебные записи (клики, попытки входа, AI-задачи)")
+    pg.add_argument("--clicks-days", type=int, default=None,
+                    help="Хранить клики N дней (по умолчанию CLICKS_RETENTION_DAYS, 30)")
+    pg.add_argument("--ai-tasks-days", type=int, default=None,
+                    help="Хранить завершённые AI-задачи N дней (по умолчанию AI_TASKS_RETENTION_DAYS, 90)")
     topup = sub.add_parser("add-balance", help="Пополнить баланс пользователя")
     topup.add_argument("email")
     topup.add_argument("amount")
@@ -225,7 +226,7 @@ def main() -> int:
     if args.command == "backup-db":
         return backup_db(args.target_dir)
     if args.command == "purge":
-        return purge(args.clicks_days)
+        return purge(args.clicks_days, args.ai_tasks_days)
     parser.print_help()  # запуск без команды — подсказка
     return 1
 

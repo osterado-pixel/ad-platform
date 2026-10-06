@@ -35,9 +35,13 @@ async def lifespan(_app: FastAPI):
     # 2. Затем — периодически, пока сервер работает
     logger.info("Запуск фоновой очистки зависших AI-задач (каждые %s с)", settings.ai_cleanup_interval_seconds)
     cleanup_bg_task = asyncio.create_task(schedule_task_cleanup())
+    # 3. Раз в сутки — удаление старых служебных записей (клики, попытки входа, завершённые AI-задачи)
+    from app.maintenance import schedule_daily_purge
+    purge_bg_task = asyncio.create_task(schedule_daily_purge())
     yield
-    cleanup_bg_task.cancel()
-    await asyncio.gather(cleanup_bg_task, return_exceptions=True)
+    for task in (cleanup_bg_task, purge_bg_task):
+        task.cancel()
+    await asyncio.gather(cleanup_bg_task, purge_bg_task, return_exceptions=True)
 
 
 app = FastAPI(

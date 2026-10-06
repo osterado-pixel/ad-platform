@@ -135,8 +135,20 @@ def test_lifespan_cleans_on_start_and_stops_loop(monkeypatch):
         except asyncio.CancelledError:
             loop_state["stopped"] = True
             raise
+    purge_state = {}
+
+    async def fake_purge_loop():
+        purge_state["started"] = True
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            purge_state["stopped"] = True
+            raise
+    from app import maintenance
     monkeypatch.setattr(ai_cleanup, "cleanup_stuck_ai_tasks", fake_cleanup)
     monkeypatch.setattr(ai_cleanup, "schedule_task_cleanup", fake_loop)
+    monkeypatch.setattr(maintenance, "schedule_daily_purge", fake_purge_loop)
     with TestClient(app):
         assert calls == [settings.ai_task_timeout_minutes]  # очистка — сразу при запуске
     assert loop_state == {"started": True, "stopped": True}  # цикл запущен и остановлен вместе с сервером
+    assert purge_state == {"started": True, "stopped": True}  # и суточная очистка старых записей
