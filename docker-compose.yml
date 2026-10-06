@@ -5,7 +5,7 @@
 #
 # Значения — из .env рядом с этим файлом (см. .env.example). Если .env нет или в нём чего-то
 # не хватает, у всех переменных есть значения по умолчанию — запуск не падает.
-# Боевой сервер с доменом и HTTPS: + docker-compose.prod.yml (см. README).
+# Готовый образ из реестра вместо сборки — docker-compose.prod.yml; HTTPS — + docker-compose.https.yml.
 services:
   db:
     image: postgres:17-alpine

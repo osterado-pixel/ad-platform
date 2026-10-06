@@ -65,16 +65,21 @@ docker compose exec api python -m app.cli create-admin admin@example.com
 
 ```bash
 cp .env.example .env     # POSTGRES_PASSWORD, SECRET_KEY, DOMAIN=ads.example.com, ACME_EMAIL=you@example.com
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml -f docker-compose.https.yml up -d
 docker compose exec api python -m app.cli create-admin admin@example.com
 ```
 
+Используется готовый образ из реестра — исходники на сервере не собираются (достаточно
+`docker-compose.prod.yml`, `docker-compose.https.yml`, `deploy/Caddyfile` и `.env`).
 Платформа: `https://ads.example.com/app`. Сертификат Let's Encrypt Caddy получает и продлевает сам.
 API наружу не открыт — только через Caddy, поэтому платформа видит реальный IP посетителя, а подставить
 чужой IP в `X-Forwarded-For` нельзя (проверено). HTTP перенаправляется на HTTPS, включён HSTS.
 
-Обновление до новой версии: `git pull` и та же команда `up -d --build` — миграции базы применятся
-при старте.
+Обновление до новой версии: `docker compose -f docker-compose.prod.yml -f docker-compose.https.yml pull`
+и та же команда `up -d` — миграции базы применятся при старте. Точная версия вместо `latest`:
+`IMAGE_TAG=sha-df56c40` в `.env` (теги — на странице пакета на GitHub).
+
+Без домена (только HTTP, порт 8000): `docker compose -f docker-compose.prod.yml up -d`.
 
 ### Вручную (любая ОС)
 
@@ -299,6 +304,7 @@ backend/
   tests/             тесты (pytest), включая браузерные (test_ui_e2e.py)
 backend/docker-compose.yml  приложение + PostgreSQL (настройки из backend/.env)
 docker-compose.yml   API + PostgreSQL
-docker-compose.prod.yml  + Caddy: домен и HTTPS (накладывается на docker-compose.yml)
+docker-compose.prod.yml  готовый образ из ghcr.io (без сборки)
+docker-compose.https.yml + Caddy: домен и HTTPS (надстройка к любому варианту)
 deploy/Caddyfile     настройки HTTPS-прокси
 ```

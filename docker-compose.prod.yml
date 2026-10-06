@@ -1,34 +1,63 @@
-# Боевой запуск с HTTPS (накладывается на docker-compose.yml):
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-# В .env дополнительно: DOMAIN=ads.example.com и ACME_EMAIL=you@example.com
-services:
-  api:
-    # Наружу API не публикуется — только через Caddy
-    ports: !reset []
-    environment:
-      # X-Forwarded-For принимается от кого угодно — но API доступен только из внутренней
-      # сети Docker, то есть только от Caddy. Подделать IP посетитель не может
-      FORWARDED_ALLOW_IPS: "*"
-      ALLOWED_HOSTS: ${DOMAIN:?Задайте DOMAIN в .env (например ads.example.com)}
+# Боевой запуск ГОТОВОГО образа из реестра (ghcr.io) — исходный код не нужен и не собирается.
+# Образ публикует CI после каждого успешного push в main.
+#
+#   docker compose -f docker-compose.prod.yml pull     # скачать свежий образ
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml exec api python -m app.cli create-admin admin@example.com
+#
+# С доменом и HTTPS (Caddy, Let's Encrypt) — добавьте надстройку:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.https.yml up -d
+#
+# Значения — из .env рядом с этим файлом; если его нет, запуск не падает (значения по умолчанию).
 
-  caddy:
-    image: caddy:2-alpine
-    environment:
-      DOMAIN: ${DOMAIN:?Задайте DOMAIN в .env}
-      ACME_EMAIL: ${ACME_EMAIL:?Задайте ACME_EMAIL в .env — для писем Let's Encrypt о сертификате}
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-      - "${HTTPS_PORT:-443}:443/udp"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data      # сертификаты — не потерять при пересоздании контейнера
-      - caddy_config:/config
-    depends_on:
-      api:
-        condition: service_healthy
+# Отдельное имя проекта: не пересекается с docker-compose.yml (сборка из исходников)
+name: ad-platform-prod
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: prod_ad_platform_db
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Порт базы наружу не открыт — к ней подключается только api из внутренней сети Docker.
+      # Для сервера всё равно задайте свой пароль в .env: значение по умолчанию есть в README
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword123}
+      POSTGRES_DB: ${POSTGRES_DB:-ad_platform_db}
+    volumes:
+      - prod_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    # IMAGE_TAG — точная версия для воспроизводимости (например sha-df56c40), по умолчанию latest
+    image: ghcr.io/osterado-pixel/ad-platform:${IMAGE_TAG:-latest}
+    container_name: prod_ad_platform_backend
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-mysecretpassword123}@db:5432/${POSTGRES_DB:-ad_platform_db}
+      # Не задан — приложение генерирует случайный ключ и хранит его в томе prod_app_data.
+      # НЕ известный всем ключ из примеров: с ним подделали бы вход под администратором
+      SECRET_KEY: ${SECRET_KEY:-}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      WEB_WORKERS: ${WEB_WORKERS:-2}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      CLICK_DEDUP_MINUTES: ${CLICK_DEDUP_MINUTES:-10}
+    volumes:
+      - prod_app_data:/app/data
+    depends_on:
+      db:
+        # Ждём, пока PostgreSQL реально принимает подключения: иначе миграции при старте упадут
+        condition: service_healthy
 
 volumes:
-  caddy_data:
-  caddy_config:
+  prod_postgres_data:
+  prod_app_data:

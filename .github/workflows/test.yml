@@ -110,7 +110,9 @@ jobs:
           docker compose config --quiet
           docker compose -f backend/docker-compose.yml config --quiet
           DOMAIN=ads.example.com ACME_EMAIL=ci@example.com \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+            docker compose -f docker-compose.yml -f docker-compose.https.yml config --quiet
+          docker compose -f docker-compose.prod.yml config --quiet
+          DOMAIN=ads.example.com ACME_EMAIL=ci@example.com             docker compose -f docker-compose.prod.yml -f docker-compose.https.yml config --quiet
 
       - name: Настройка Docker Buildx
         uses: docker/setup-buildx-action@v3
