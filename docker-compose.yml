@@ -53,6 +53,7 @@ services:
       GEMINI_PRICE_OUTPUT_PER_1M: ${GEMINI_PRICE_OUTPUT_PER_1M:-3.75}
       AI_MARKUP: ${AI_MARKUP:-1.5}
       USD_RATE: ${USD_RATE:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

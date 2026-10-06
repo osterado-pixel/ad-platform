@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     gemini_price_input_per_1m: Decimal = Field(default=Decimal("0.75"), ge=0)
     gemini_price_output_per_1m: Decimal = Field(default=Decimal("3.75"), ge=0)  # включая «размышления»
     ai_markup: Decimal = Field(default=Decimal("1.5"), ge=1)  # наценка платформы к себестоимости
+    # OpenAI Moderation API (бесплатный, но нужен ключ OpenAI): нет ключа — только локальный фильтр
+    openai_api_key: str = ""
+    openai_moderation_model: str = "omni-moderation-latest"
     # Сколько единиц валюты баланса стоит 1 $ (баланс в долларах — 1, в рублях — курс, например 90)
     usd_rate: Decimal = Field(default=Decimal("1"), gt=0)
 
