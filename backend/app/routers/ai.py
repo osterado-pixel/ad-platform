@@ -48,11 +48,8 @@ def generate_ad_copy(
     #    Эндпоинт синхронный (выполняется в пуле потоков), поэтому sync-вариант moderate_text
     moderate_text_sync(f"{request.product_description}\n{request.target_audience}")
 
-    # 1. Резерв
-    try:
-        hold = ai_billing.reserve(db, current_user.id)
-    except ai_billing.InsufficientFunds as e:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e)) from None
+    # 1. Резерв (не хватает денег — InsufficientFunds, это ответ 402)
+    hold = ai_billing.reserve(db, current_user.id)
 
     # 2. Генерация — без открытой транзакции
     try:
@@ -103,8 +100,7 @@ def start_ad_generation(
     check_local_rules(f"{request.product_description}\n{request.target_audience}")
     hold = ai_billing.hold_amount()
     if current_user.balance < hold:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                            detail=str(ai_billing.InsufficientFunds(hold)))
+        raise ai_billing.InsufficientFunds(hold)
 
     active = db.scalar(select(func.count()).select_from(AITask).where(
         AITask.user_id == current_user.id,

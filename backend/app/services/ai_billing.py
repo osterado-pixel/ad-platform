@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import ROUND_UP, Decimal
 
+from fastapi import HTTPException, status
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
@@ -47,20 +48,26 @@ class Hold:
     transaction_id: int
 
 
-class InsufficientFunds(Exception):
+class InsufficientFunds(HTTPException):
+    """Не хватает денег на резерв. Это HTTPException (402): в эндпоинте можно не перехватывать."""
+
     def __init__(self, amount: Decimal):
         self.amount = amount
-        super().__init__(f"Недостаточно средств для AI-генерации: нужно не меньше {amount:.2f} на балансе "
-                         "(лишнее вернётся после генерации)")
+        super().__init__(status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                         detail=f"Недостаточно средств для AI-генерации: нужно не меньше {amount:.2f} "
+                                "на балансе (лишнее вернётся после генерации)")
 
 
-def reserve(db: Session, user_id: int, link: Callable[[Session, int], None] | None = None) -> Hold:
+def reserve(db: Session, user_id: int, link: Callable[[Session, int], None] | None = None,
+            amount: Decimal | None = None) -> Hold:
     """Резервирует деньги и фиксирует это (commit). InsufficientFunds — если не хватает.
 
     link(db, transaction_id) — записать ссылку на резерв в той же транзакции БД (например, в задачу):
     тогда не бывает резерва, о котором никто не знает.
     """
-    amount = hold_amount()
+    amount = hold_amount() if amount is None else amount
+    if amount <= 0:
+        raise ValueError("Сумма резерва должна быть больше 0")
     with write_lock():
         reserved = db.execute(
             update(User).where(User.id == user_id, User.balance >= amount)

@@ -83,7 +83,7 @@ def run_gemini_generation_task(
         except ContentRejected as e:
             _fail(db, task_id, hold, e.detail)
         except ai_billing.InsufficientFunds as e:
-            _fail(db, task_id, hold, str(e))
+            _fail(db, task_id, hold, e.detail)
         except AIUnavailable as e:
             _fail(db, task_id, hold, f"AI-генерация не выполнена: {e}. Деньги не списаны")
         except Exception:

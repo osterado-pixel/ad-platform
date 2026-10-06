@@ -429,7 +429,8 @@ backend/
     ai.py            AI-проверка объявления (Claude, Anthropic API)
     moderation.py    запуск AI-проверки и сохранение результата
     worker.py        Celery: очередь фоновых задач (Redis)
-    services/        gemini_service.py — AI-копирайтер (Google Gemini); moderation_service.py — быстрая модерация текста
+    services/        billing.py — заморозка/списание/возврат (поверх ai_billing.py);
+                     gemini_service.py — AI-копирайтер (Google Gemini); moderation_service.py — быстрая модерация текста
     routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai
     static/          widget.js, demo.html, ui/ (веб-интерфейс)
     cli.py           команды администратора
