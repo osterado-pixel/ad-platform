@@ -669,7 +669,9 @@ async function walletView() {
 
   return h("div", {},
     h("h1", {}, "Кошелёк"),
-    h("div", { class: "grid" }, statCard("Баланс", money(state.me.balance))),
+    h("div", { class: "grid" }, statCard("Баланс", money(state.me.balance)),
+      // Резерв под AI-генерации, которые ещё выполняются: после них вернётся или спишется по факту
+      Number(state.me.held_balance) > 0 ? statCard("Заморожено", money(state.me.held_balance)) : null),
     h("div", { class: "card" }, h("h2", {}, "Пополнение"), depositForm),
     h("div", { class: "card" }, h("h2", {}, "История операций"),
       count ? h("div", { class: "table-wrap" }, h("table", {},

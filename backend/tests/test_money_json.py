@@ -20,7 +20,7 @@ from app.schemas import (
 def test_money_serialized_as_number(value, expected):
     dumped = WalletBalanceResponse(balance=Decimal(value)).model_dump_json()
     assert json.loads(dumped)["balance"] == expected
-    assert dumped == f'{{"balance":{expected!r}}}'
+    assert dumped == f'{{"balance":{expected!r},"held_balance":0.0}}'
 
 
 def test_money_stays_decimal_inside():
@@ -56,7 +56,7 @@ def test_analytics_summary_route_equals_stats_me(client, db):
 def test_money_input_accepts_string_and_number(client, auth_headers):
     for amount, expected in [("10.25", 10.25), (5, 15.25), (0.75, 16.0)]:
         r = client.post("/api/v1/wallet/deposit", json={"amount": amount}, headers=auth_headers)
-        assert r.json() == {"balance": expected}
+        assert r.json() == {"balance": expected, "held_balance": 0.0}
 
 
 def test_openapi_documents_money_as_number(client):

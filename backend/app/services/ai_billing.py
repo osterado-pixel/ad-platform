@@ -1,11 +1,15 @@
 """Оплата AI-генерации с баланса: резерв → генерация → расчёт по факту (или возврат).
 
-1. reserve: атомарно списываем максимально возможную цену (UPDATE ... WHERE balance >= резерв)
-   и сразу пишем операцию ai_spend в журнал — баланс всегда равен сумме журнала, а параллельные
+1. reserve: атомарно переносим максимально возможную цену из balance в held_balance
+   (UPDATE ... WHERE balance >= резерв) и сразу пишем операцию ai_spend в журнал — баланс всегда равен сумме журнала, а параллельные
    запросы не потратят больше, чем есть на балансе.
 2. Генерация — вне транзакции БД.
-3. settle: операция уменьшается до фактической цены, разница возвращается, запись в ai_logs.
-   refund: резерв возвращается целиком (операция refund) — за неудачную генерацию не платят.
+3. settle: резерв снимается с held_balance, операция уменьшается до фактической цены, разница
+   возвращается в balance, запись в ai_logs.
+   refund: резерв целиком возвращается из held_balance в balance (операция refund).
+
+Журнал: balance = пополнения + возвраты − списания (резерв в журнале — уже списание ai_spend);
+held_balance — сколько из этих списаний пока лишь заморожено.
 
 settle и refund не делают commit: вызывающий код фиксирует их вместе со своими изменениями
 (например, со статусом фоновой задачи), под write_lock().
@@ -60,7 +64,7 @@ def reserve(db: Session, user_id: int, link: Callable[[Session, int], None] | No
     with write_lock():
         reserved = db.execute(
             update(User).where(User.id == user_id, User.balance >= amount)
-            .values(balance=User.balance - amount)
+            .values(balance=User.balance - amount, held_balance=User.held_balance + amount)
         ).rowcount
         if not reserved:
             db.rollback()  # UPDATE открыл транзакцию записи — освобождаем сразу
@@ -76,7 +80,8 @@ def reserve(db: Session, user_id: int, link: Callable[[Session, int], None] | No
 
 def refund(db: Session, hold: Hold, description: str = "Возврат: AI-генерация не выполнена") -> None:
     """Возвращает резерв целиком. Без commit."""
-    db.execute(update(User).where(User.id == hold.user_id).values(balance=User.balance + hold.amount))
+    db.execute(update(User).where(User.id == hold.user_id).values(
+        balance=User.balance + hold.amount, held_balance=User.held_balance - hold.amount))
     add_transaction(db, user_id=hold.user_id, amount=hold.amount, type=TransactionType.REFUND,
                     description=description[:255])
 
@@ -86,7 +91,8 @@ def settle(db: Session, hold: Hold, usage: dict, prompt_type: str) -> tuple[Deci
     charge = min(to_balance(usage["cost"]), hold.amount)
     remaining = db.scalar(
         update(User).where(User.id == hold.user_id)
-        .values(balance=User.balance + (hold.amount - charge)).returning(User.balance)
+        .values(balance=User.balance + (hold.amount - charge), held_balance=User.held_balance - hold.amount)
+        .returning(User.balance)
     )
     db.execute(update(Transaction).where(Transaction.id == hold.transaction_id).values(
         amount=charge,

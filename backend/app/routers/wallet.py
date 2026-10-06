@@ -29,13 +29,13 @@ def deposit_funds(
     # Та же очередь записей SQLite, что и у кликов: без ожидания с паузами
     with write_lock():
         # Атомарно на стороне БД: параллельное списание за клик не потеряется
-        new_balance = db.scalar(
+        row = db.execute(
             update(User)
             .where(User.id == target_id)
             .values(balance=User.balance + deposit_data.amount)
-            .returning(User.balance)
-        )
-        if new_balance is None:
+            .returning(User.balance, User.held_balance)
+        ).first()
+        if row is None:
             db.rollback()  # UPDATE уже открыл транзакцию записи — освобождаем сразу
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
@@ -47,13 +47,13 @@ def deposit_funds(
         db.commit()
 
     # Кампании возобновлять не нужно: /serve показывает их снова, как только баланса хватает на клик
-    return WalletBalanceResponse(balance=new_balance)
+    return WalletBalanceResponse(balance=row.balance, held_balance=row.held_balance)
 
 
 # 2. Получение текущего баланса
 @router.get("/balance", response_model=WalletBalanceResponse)
 def get_balance(current_user: User = Depends(get_current_user)):
-    return WalletBalanceResponse(balance=current_user.balance)
+    return WalletBalanceResponse(balance=current_user.balance, held_balance=current_user.held_balance)
 
 
 # 3. История транзакций

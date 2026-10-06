@@ -31,13 +31,13 @@ def test_password_length(password):
 
 def test_user_response_from_orm():
     u = User(id=1, email="a@b.ru", hashed_password="h", role=UserRole.ADMIN,
-             balance=Decimal("10.10"), created_at=datetime.now(timezone.utc))
+             balance=Decimal("10.10"), held_balance=Decimal("0.03"), created_at=datetime.now(timezone.utc))
     data = UserResponse.model_validate(u)
     assert data.role is UserRole.ADMIN
     assert data.balance == Decimal("10.10")
     dumped = data.model_dump(mode="json")
     assert dumped["role"] == "admin"
-    assert dumped["balance"] == 10.1
+    assert dumped["balance"] == 10.1 and dumped["held_balance"] == 0.03
     assert "hashed_password" not in dumped
 
 
@@ -178,7 +178,7 @@ def test_transaction_response_from_orm():
 
 
 def test_wallet_balance_response():
-    assert WalletBalanceResponse(balance=Decimal("95.00")).model_dump(mode="json") == {"balance": 95.0}
+    assert WalletBalanceResponse(balance=Decimal("95.00")).model_dump(mode="json") == {"balance": 95.0, "held_balance": 0.0}
 
 
 def test_paginated_response_generic():

@@ -45,7 +45,10 @@ class TransactionType(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("balance >= 0", name="ck_users_balance_nonneg"),)
+    __table_args__ = (
+        CheckConstraint("balance >= 0", name="ck_users_balance_nonneg"),
+        CheckConstraint("held_balance >= 0", name="ck_users_held_balance_nonneg"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -54,7 +57,11 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(
         _enum(UserRole, "user_role"), default=UserRole.ADVERTISER,
         server_default=UserRole.ADVERTISER.value)
+    # Доступный баланс: им оплачиваются клики и AI-генерация
     balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    # Замороженная сумма: резерв под AI-генерации, которые ещё выполняются (app/services/ai_billing.py).
+    # В balance она уже не входит; после генерации — списывается по факту или возвращается в balance
+    held_balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     # Число записей в журнале транзакций — total для истории без COUNT(*) (см. app/ledger.py)
     transactions_count: Mapped[int] = mapped_column(default=0, server_default="0")
     # Версия токенов: смена пароля увеличивает её, и все ранее выданные токены перестают действовать

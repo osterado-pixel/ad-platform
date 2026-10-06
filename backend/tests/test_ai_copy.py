@@ -11,7 +11,7 @@ from app.ai import AIUnavailable
 from app.auth import create_access_token
 from app.config import settings
 from app.ledger import add_transaction
-from app.models import AILog, Transaction, TransactionType, User
+from app.models import AILog, AITask, AITaskStatus, Transaction, TransactionType, User
 from app.services import gemini_service, moderation_service
 
 URL = "/api/v1/ai/generate-copy"
@@ -44,6 +44,16 @@ def assert_ledger_matches(db, user_id):
     assert Decimal(income) - Decimal(spend) == balance_of(db, user_id)
     assert db.get(User, user_id).transactions_count == db.scalar(
         select(func.count()).where(Transaction.user_id == user_id))
+    # Заморожено ровно столько, сколько зарезервировано под ещё выполняющиеся задачи
+    held = db.scalar(select(func.coalesce(func.sum(Transaction.amount), 0))
+                     .join(AITask, AITask.transaction_id == Transaction.id)
+                     .where(AITask.user_id == user_id, AITask.status == AITaskStatus.PROCESSING))
+    assert db.get(User, user_id).held_balance == Decimal(held)
+
+
+def held_of(db, user_id) -> Decimal:
+    db.expire_all()
+    return db.get(User, user_id).held_balance
 
 
 @pytest.fixture
@@ -217,3 +227,26 @@ def test_openai_moderation_flag_rejects(client, db, gemini, monkeypatch):
     assert r.status_code == 422 and "угрозы" in r.json()["detail"]
     assert calls == [f"{BODY['product_description']}\n{BODY['target_audience']}"]  # одним запросом
     assert gemini.calls == [] and balance_of(db, user.id) == Decimal("5")
+
+
+# --- Замороженный баланс (held_balance) ---
+def test_held_balance_during_generation(client, db, gemini):
+    user, h = user_with_balance(db, "10")
+    seen = {}
+
+    def check_wallet():
+        seen.update(client.get("/api/v1/wallet/balance", headers=h).json())
+    gemini.during = check_wallet
+    client.post(URL, json=BODY, headers=h)
+    # Пока модель отвечает: 0.03 заморожено и в доступный баланс не входит
+    assert seen == {"balance": 9.97, "held_balance": 0.03}
+    # После: заморозка снята, списано по факту
+    assert (balance_of(db, user.id), held_of(db, user.id)) == (Decimal("9.99"), Decimal("0"))
+    assert client.get("/api/v1/auth/me", headers=h).json()["held_balance"] == 0.0
+
+
+def test_held_balance_released_on_error(client, db, gemini):
+    gemini.error = AIUnavailable("сбой")
+    user, h = user_with_balance(db, "10")
+    client.post(URL, json=BODY, headers=h)
+    assert (balance_of(db, user.id), held_of(db, user.id)) == (Decimal("10"), Decimal("0"))

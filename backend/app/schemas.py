@@ -62,6 +62,7 @@ class UserResponse(BaseModel):
     role: UserRole
     is_admin: bool = False  # то же, что role == "admin" — удобно фронтенду
     balance: Money
+    held_balance: Money = Decimal("0")  # заморожено под выполняющиеся AI-генерации
     created_at: UtcDatetime
 
 
@@ -291,7 +292,8 @@ class TransactionResponse(BaseModel):
 
 
 class WalletBalanceResponse(BaseModel):
-    balance: Money
+    balance: Money = Field(description="Доступно")
+    held_balance: Money = Field(default=Decimal("0"), description="Заморожено под выполняющиеся AI-генерации")
 
 
 # --- Пользователи (для админа) ---

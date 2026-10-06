@@ -10,7 +10,7 @@ from app.ai import AIUnavailable
 from app.models import AILog, AITask, AITaskStatus, Transaction, TransactionType
 from app.services import ai_background as bg
 
-from tests.test_ai_copy import VARIANTS, assert_ledger_matches, balance_of, gemini, user_with_balance  # noqa: F401
+from tests.test_ai_copy import VARIANTS, assert_ledger_matches, balance_of, gemini, held_of, user_with_balance  # noqa: F401
 
 DESC, AUD = "Онлайн-курс Python с нуля", "новички"
 
@@ -126,6 +126,8 @@ def test_stale_processing_task_refunded(db, gemini, factory):
         run(tid, user.id, factory)
     assert task_of(db, tid).status == AITaskStatus.PROCESSING
     assert balance_of(db, user.id) == Decimal("9.97")  # 0.03 в резерве
+    assert held_of(db, user.id) == Decimal("0.03")
+    assert_ledger_matches(db, user.id)
 
     assert bg.fail_stale_tasks(factory) == 0  # свежая — не трогаем, вдруг ещё работает
     make_old(db, tid)

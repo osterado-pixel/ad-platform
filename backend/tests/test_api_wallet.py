@@ -29,7 +29,7 @@ def test_admin_deposits_to_self(client, db):
     admin, h = make_user(db, "admin@mail.ru", UserRole.ADMIN, "10")
     r = client.post(f"{W}/deposit", json={"amount": 100.5}, headers=h)
     assert r.status_code == 200
-    assert r.json() == {"balance": 110.5}
+    assert r.json() == {"balance": 110.5, "held_balance": 0.0}
     t = db.query(Transaction).one()
     assert (t.user_id, t.amount, t.type) == (admin.id, Decimal("100.50"), TransactionType.DEPOSIT)
 
@@ -38,8 +38,8 @@ def test_admin_deposits_to_other_user(client, db):
     _, h = make_user(db, "admin@mail.ru", UserRole.ADMIN)
     user, hu = make_user(db, "a@mail.ru")
     r = client.post(f"{W}/deposit", params={"user_id": user.id}, json={"amount": 50}, headers=h)
-    assert r.json() == {"balance": 50.0}
-    assert client.get(f"{W}/balance", headers=hu).json() == {"balance": 50.0}
+    assert r.json() == {"balance": 50.0, "held_balance": 0.0}
+    assert client.get(f"{W}/balance", headers=hu).json() == {"balance": 50.0, "held_balance": 0.0}
     assert db.query(Transaction).one().user_id == user.id
 
 
