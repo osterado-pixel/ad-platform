@@ -29,3 +29,8 @@ backups
 tests
 # Сгенерированный ключ подписи токенов (app/config.py)
 data
+
+# Отчёты покрытия тестами (pytest-cov)
+.coverage
+.coverage.*
+htmlcov

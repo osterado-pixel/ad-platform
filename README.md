@@ -379,7 +379,8 @@ alembic upgrade head                                  # применить ми�
 ```bash
 cd backend
 venv/Scripts/python -m pip install -r requirements-dev.txt
-venv/Scripts/python -m pytest                    # ~210 тестов, ~5 с, SQLite в памяти
+venv/Scripts/python -m pytest                    # ~470 тестов, ~20 с, SQLite в памяти, с покрытием
+venv/Scripts/python -m pytest --no-cov tests/test_ai_copy.py   # один файл, быстро, без покрытия
 venv/Scripts/python -m pytest -m e2e             # сквозные в браузере (Edge или Chrome)
 ```
 
@@ -391,6 +392,9 @@ E2E_DATABASE_URL=postgresql+psycopg2://user@host/adp_e2e  pytest -m e2e
 ```
 
 Тесты никогда не трогают рабочую `app.db`.
+
+Покрытие считается при каждом запуске (настройки — `backend/pytest.ini`): в терминале — файлы
+с непокрытыми строками и номерами этих строк, полный отчёт по строкам — `backend/htmlcov/index.html`.
 
 **CI (GitHub Actions)** — `.github/workflows/test.yml`, запускается на каждый push и pull request
 в `main` / `master` / `develop`: тесты на Python 3.13 и 3.14 × SQLite и PostgreSQL (с покрытием
