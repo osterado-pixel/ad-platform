@@ -13,22 +13,33 @@
 #   docker cp .\backups\backup_ad_platform_db_<дата>.dump prod_ad_platform_db:/tmp/restore.dump
 #   docker exec prod_ad_platform_db pg_restore -U postgres -d ad_platform_db --clean --if-exists /tmp/restore.dump
 #
-# Ежедневно по расписанию (Планировщик заданий Windows), один раз от администратора:
-#   schtasks /Create /TN "AdPlatformBackup" /SC DAILY /ST 03:00 /TR "powershell -ExecutionPolicy Bypass -File `"$PSScriptRoot\backup.ps1`""
+# Ежедневно по расписанию (Планировщик заданий Windows), один раз:
+#   powershell -ExecutionPolicy Bypass -File .\backup-schedule.ps1   (создаёт задачу «AdPlatform DB Backup», 03:00)
 
 param(
     [string]$Container = "prod_ad_platform_db",
     [int]$KeepDays = 7,
     [int]$KeepAtLeast = 3,
-    [string]$BackupDir = (Join-Path $PSScriptRoot "backups")
+    [string]$BackupDir = (Join-Path $PSScriptRoot "backups"),
+    # Журнал запусков: при запуске по расписанию окна не видно — только так узнать о сбое
+    [string]$LogFile
 )
 
 # Continue, а не Stop: в Windows PowerShell 5.1 вывод программ в stderr при Stop прерывает скрипт.
 # Успех каждого шага проверяется по $LASTEXITCODE
 $ErrorActionPreference = "Continue"
 
+function Say([string]$message, [string]$color = "Gray") {
+    Write-Host $message -ForegroundColor $color
+    if ($LogFile) {
+        $dir = Split-Path $LogFile -Parent
+        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+        Add-Content -Path $LogFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $message" -Encoding UTF8
+    }
+}
+
 function Fail([string]$message) {
-    Write-Host "❌ $message" -ForegroundColor Red
+    Say "❌ $message" "Red"
     exit 1
 }
 
@@ -54,7 +65,7 @@ if ($state -ne "true") { Fail "Контейнер '$Container' не запуще
 
 if (-not (Test-Path $BackupDir)) { New-Item -ItemType Directory -Path $BackupDir | Out-Null }
 
-Write-Host "⏳ Создание резервной копии базы $DbName (контейнер $Container)..." -ForegroundColor Yellow
+Say "⏳ Создание резервной копии базы $DbName (контейнер $Container)..." "Yellow"
 
 # 1. Дамп ВНУТРИ контейнера, в файл: без -t и без конвейера PowerShell — иначе Windows PowerShell
 #    перекодирует двоичные данные как текст и копия испортится. -Fc — сжатый формат pg_dump
@@ -77,7 +88,7 @@ if ($copied -ne 0 -or -not (Test-Path $fileName) -or (Get-Item $fileName).Length
 }
 
 $sizeKb = [math]::Round((Get-Item $fileName).Length / 1KB, 1)
-Write-Host "✅ Бэкап успешно создан: $fileName ($sizeKb КБ)" -ForegroundColor Green
+Say "✅ Бэкап успешно создан: $fileName ($sizeKb КБ)" "Green"
 
 # 4. Очистка — только после успешной копии и всегда оставляя KeepAtLeast самых свежих:
 #    иначе неделя сбоев удалила бы все рабочие копии
@@ -85,7 +96,7 @@ $all = Get-ChildItem -Path $BackupDir -Filter "backup_${DbName}_*.dump" | Sort-O
 $old = $all | Select-Object -Skip $KeepAtLeast | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) }
 foreach ($f in $old) {
     Remove-Item $f.FullName
-    Write-Host "🗑  Удалён старый бэкап: $($f.Name)"
+    Say "🗑  Удалён старый бэкап: $($f.Name)"
 }
-Write-Host "Копий в ${BackupDir}: $(@($all).Count - @($old).Count)"
+Say "Копий в ${BackupDir}: $(@($all).Count - @($old).Count)"
 exit 0
