@@ -237,8 +237,14 @@ class AITaskStatus(str, enum.Enum):
 class AITask(Base):
     """Фоновая AI-задача: клиент получает id сразу и опрашивает статус, не держа соединение."""
     __tablename__ = "ai_tasks"
-    # Список задач пользователя, новые сверху
-    __table_args__ = (Index("ix_ai_tasks_user_id_created_at", "user_id", "created_at"),)
+    __table_args__ = (
+        # Список задач пользователя без фильтра, новые сверху
+        Index("ix_ai_tasks_user_id_created_at", "user_id", "created_at"),
+        # Список с фильтром по статусу и подсчёт незавершённых задач (лимит на пользователя)
+        Index("ix_ai_tasks_user_id_status_created_at", "user_id", "status", "created_at"),
+        # Очистка зависших: status IN (pending, processing) AND updated_at < порог
+        Index("ix_ai_tasks_status_updated_at", "status", "updated_at"),
+    )
 
     # UUID строкой: id нельзя угадать перебором, как 1, 2, 3 (задачи — личные данные пользователя)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
