@@ -41,7 +41,7 @@ def server():
            "DATABASE_URL": db_url,
            "SECRET_KEY": "e2e-secret-key-0123456789abcdefghijklmnopq",
            "BCRYPT_ROUNDS": "4",
-           "ANTHROPIC_API_KEY": ""}  # без обращений к платному API
+           "ANTHROPIC_API_KEY": "", "GEMINI_API_KEY": "", "OPENAI_API_KEY": ""}  # без обращений к внешним API
     SERVER_DB["url"] = db_url
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env,
                    check=True, capture_output=True)

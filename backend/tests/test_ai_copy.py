@@ -12,7 +12,7 @@ from app.auth import create_access_token
 from app.config import settings
 from app.ledger import add_transaction
 from app.models import AILog, Transaction, TransactionType, User
-from app.services import gemini_service
+from app.services import gemini_service, moderation_service
 
 URL = "/api/v1/ai/generate-copy"
 BODY = {"product_description": "Онлайн-курс Python с нуля", "target_audience": "новички"}
@@ -185,3 +185,35 @@ def test_default_audience_and_auth(client, db, gemini):
     assert client.post(URL, json={"product_description": BODY["product_description"]}).status_code == 401
     assert client.post(URL, json={"product_description": BODY["product_description"]}, headers=h).status_code == 200
     assert gemini.calls[-1][1] == "Общая аудитория"
+
+
+# --- Модерация до денег и до Gemini ---
+@pytest.mark.parametrize("body,reason", [
+    ({"product_description": "Лучшее онлайн-казино с бонусом"}, "азартные игры"),
+    ({"product_description": "Курс для тех, кто хочет зарабатывать", "target_audience": "кто ищет заработок без вложений"},
+     "заработка без вложений"),
+])
+def test_forbidden_text_rejected_before_billing(client, db, gemini, body, reason):
+    user, h = user_with_balance(db, "5")
+    r = client.post(URL, json=body, headers=h)
+    assert r.status_code == 422 and reason in r.json()["detail"]
+    assert gemini.calls == []  # платный запрос не отправлен
+    assert balance_of(db, user.id) == Decimal("5")
+    assert db.scalar(select(func.count()).where(Transaction.user_id == user.id)) == 1  # только пополнение
+
+
+def test_moderation_runs_before_balance_check(client, db, gemini):
+    # Без денег и с запрещённым текстом — причина в тексте, а не «пополните баланс»
+    _, h = user_with_balance(db, "0")
+    assert client.post(URL, json={"product_description": "Ставки на спорт онлайн"}, headers=h).status_code == 422
+
+
+def test_openai_moderation_flag_rejects(client, db, gemini, monkeypatch):
+    calls = []
+    monkeypatch.setattr(moderation_service, "find_openai_violations",
+                        lambda text: calls.append(text) or ["угрозы"])
+    user, h = user_with_balance(db, "5")
+    r = client.post(URL, json=BODY, headers=h)
+    assert r.status_code == 422 and "угрозы" in r.json()["detail"]
+    assert calls == [f"{BODY['product_description']}\n{BODY['target_audience']}"]  # одним запросом
+    assert gemini.calls == [] and balance_of(db, user.id) == Decimal("5")

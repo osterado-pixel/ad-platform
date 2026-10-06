@@ -1,5 +1,8 @@
 """AI-копирайтер: варианты объявления от Gemini с оплатой с баланса.
 
+0. Модерация описания и аудитории (стоп-фразы + OpenAI Moderation) — до денег и до Gemini:
+   за запрещённый текст платный запрос не отправляется и с баланса ничего не резервируется.
+
 Порядок оплаты (резерв → генерация → расчёт):
 1. Атомарно резервируем максимально возможную стоимость запроса (UPDATE ... WHERE balance >= резерв)
    и сразу пишем операцию ai_spend в журнал: баланс всегда равен сумме журнала, а параллельные
@@ -24,6 +27,7 @@ from app.ledger import add_transaction
 from app.models import AILog, Transaction, TransactionType, User
 from app.schemas import AdCopyResponse, AdGenerateRequest
 from app.services import gemini_service
+from app.services.moderation_service import moderate_text_sync
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +58,10 @@ def generate_ad_copy(
     if not gemini_service.is_enabled():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="AI-копирайтер выключен: не задан GEMINI_API_KEY")
+    # 0. Модерация: одним запросом и описание, и аудиторию («аудитория: любители казино» — тоже нарушение).
+    #    Эндпоинт синхронный (выполняется в пуле потоков), поэтому sync-вариант moderate_text
+    moderate_text_sync(f"{request.product_description}\n{request.target_audience}")
+
     user_id = current_user.id
     hold = to_balance(gemini_service.max_cost())
 

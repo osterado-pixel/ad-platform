@@ -12,7 +12,8 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdefghijklmnop"
 os.environ["DATABASE_URL"] = "sqlite://"
 # Ключ Anthropic из backend/.env в тестах не используется: ни один тест не должен
 # обращаться к настоящему API (это платно). AI-тесты включают его подменой модели
-os.environ["ANTHROPIC_API_KEY"] = ""
+for _key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"):
+    os.environ[_key] = ""
 # Минимальная стоимость bcrypt: в тестах стойкость к перебору не нужна, а скорость — да
 os.environ.setdefault("BCRYPT_ROUNDS", "4")
 
