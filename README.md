@@ -64,7 +64,7 @@ docker compose exec api python -m app.cli create-admin admin@example.com
 Нужны: сервер с Docker, домен, DNS-запись `A` домена → IP сервера, открытые порты 80 и 443.
 
 ```bash
-cp .env.example .env     # POSTGRES_PASSWORD, SECRET_KEY, DOMAIN=ads.example.com, ACME_EMAIL=you@example.com
+cp .env.example .env     # POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY, DOMAIN=ads.example.com, ACME_EMAIL=you@example.com
 docker compose -f docker-compose.prod.yml -f docker-compose.https.yml up -d
 docker compose exec api python -m app.cli create-admin admin@example.com
 ```
@@ -80,6 +80,11 @@ API наружу не открыт — только через Caddy, поэто
 `IMAGE_TAG=sha-df56c40` в `.env` (теги — на странице пакета на GitHub).
 
 Без домена (только HTTP, порт 8000): `docker compose -f docker-compose.prod.yml up -d`.
+
+В составе — **Redis** (для очередей фоновых задач). Как и база, он доступен только внутри сети Docker
+(порт 6379 наружу не открыт), с паролем `REDIS_PASSWORD` (по умолчанию `myredispassword123` —
+на сервере задайте свой) и сохранением данных между перезапусками (том `prod_redis_data`).
+Приложение получает адрес в `REDIS_URL`.
 
 ### Вручную (любая ОС)
 

@@ -32,6 +32,25 @@ services:
       timeout: 5s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    container_name: prod_ad_platform_redis
+    restart: unless-stopped
+    # Порт наружу НЕ открыт (как и у базы): Redis без защиты в интернете — частая причина взлома
+    # серверов. К нему подключается только api из внутренней сети Docker, и то с паролем
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-myredispassword123}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-myredispassword123}  # пароль для redis-cli (проверка здоровья)
+    # appendonly: данные (очередь задач) переживают перезапуск контейнера
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - prod_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   api:
     # IMAGE_TAG — точная версия для воспроизводимости (например sha-df56c40), по умолчанию latest
     image: ghcr.io/osterado-pixel/ad-platform:${IMAGE_TAG:-latest}
@@ -62,13 +81,17 @@ services:
       AI_MARKUP: ${AI_MARKUP:-1.5}
       USD_RATE: ${USD_RATE:-1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-myredispassword123}@redis:6379/0
     volumes:
       - prod_app_data:/app/data
     depends_on:
       db:
         # Ждём, пока PostgreSQL реально принимает подключения: иначе миграции при старте упадут
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   prod_postgres_data:
   prod_app_data:
+  prod_redis_data:
