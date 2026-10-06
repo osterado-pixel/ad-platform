@@ -14,12 +14,16 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.middleware import JsonCharsetMiddleware, PublicCorsMiddleware, SecurityHeadersMiddleware
+from app.monitoring import init_sentry
 from app.pagination import PAGINATION_HEADERS
 from app.routers import ads, ai, auth, campaigns, placements, stats, users, wallet
 
 # Схема БД управляется миграциями Alembic: `alembic upgrade head` из папки backend/
 
 logger = logging.getLogger(__name__)
+
+# До создания приложения: Sentry подключается к FastAPI при его создании
+init_sentry("api")
 
 
 @asynccontextmanager

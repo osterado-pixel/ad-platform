@@ -264,6 +264,17 @@ pending → processing → completed / failed, результат или пон�
 
 Нарушение — `ContentRejected` (HTTP 422) со списком причин на русском.
 
+## Мониторинг ошибок (Sentry)
+
+Включается переменной `SENTRY_DSN` (sentry.io → новый проект Python/FastAPI → Client Keys). Без неё
+ничего не отправляется. Оповещения приходят о необработанных ошибках в запросах и задачах Celery и о
+записях лога уровня ERROR — например, о непредвиденной ошибке фоновой AI-генерации. Ожидаемые сбои
+(лимит Gemini, отказ модерации) — предупреждения: в оповещения не попадают.
+
+Личные данные не отправляются: ни IP посетителей, ни cookie, ни токены (в том числе из переменных стека —
+значения локальных переменных Sentry не получает), ни тела запросов. `SENTRY_ENVIRONMENT` — метка
+окружения (production / staging), `SENTRY_TRACES_SAMPLE_RATE` — доля запросов с замером скорости (0).
+
 ## Подключение своего фронтенда (React, Vue, Next.js)
 
 Встроенный интерфейс `/app` работает без настроек. Для отдельного фронтенда на другом домене
@@ -443,6 +454,7 @@ backend/
     ai.py            AI-проверка объявления (Claude, Anthropic API)
     moderation.py    запуск AI-проверки и сохранение результата
     worker.py        Celery: очередь фоновых задач (Redis)
+    monitoring.py    Sentry: оповещения об ошибках
     services/        billing.py — заморозка/списание/возврат (поверх ai_billing.py);
                      gemini_service.py — AI-копирайтер (Google Gemini); moderation_service.py — быстрая модерация текста
     routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai

@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     ai_cleanup_interval_seconds: int = Field(default=300, ge=10)
     ai_task_timeout_minutes: int = Field(default=10, ge=2)
 
+    # Sentry — оповещения об ошибках (sentry.io → проект → Client Keys (DSN)). Пусто — выключено
+    sentry_dsn: str = ""
+    sentry_environment: str = "production"
+    # Доля запросов с замером производительности (0 — только ошибки; 0.1 — каждый десятый запрос)
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0, le=1)
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 

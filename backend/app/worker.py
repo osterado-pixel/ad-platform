@@ -6,6 +6,9 @@
 from celery import Celery
 
 from app.config import settings
+from app.monitoring import init_sentry
+
+init_sentry("worker")
 
 celery_app = Celery("ad_platform", broker=settings.redis_url)
 
