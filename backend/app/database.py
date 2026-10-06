@@ -51,3 +51,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def background_session_factory(db):
+    """Фабрика сессий для фоновой задачи — к той же базе, что и запрос (в тестах — к тестовой).
+
+    Сессия запроса к моменту выполнения фоновой задачи уже закрыта, поэтому задача открывает свои.
+    """
+    return sessionmaker(bind=db.get_bind(), autoflush=False)

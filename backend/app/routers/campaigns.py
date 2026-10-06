@@ -2,12 +2,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, selectinload
 
 from app import ai
 from app.auth import get_current_user, require_admin
 from app.config import settings
-from app.database import get_db
+from app.database import background_session_factory, get_db
 from app.models import Campaign, CampaignStatus, Placement, User, UserRole
 from app.moderation import run_ai_review
 from app.pagination import fetch_page_with_total, limit_param, offset_param
@@ -104,12 +104,6 @@ def ai_status(_admin: User = Depends(require_admin)):
     return AIStatus(enabled=ai.is_enabled(), model=settings.ai_model, auto_reject=settings.ai_auto_reject)
 
 
-def _session_factory(db: Session):
-    # Отдельные сессии для фоновой проверки — к той же базе, что и запрос
-    # (в тестах — к тестовой). Сессия запроса к тому времени уже закрыта
-    return sessionmaker(bind=db.get_bind(), autoflush=False)
-
-
 def _get_campaign_for_update(db: Session, campaign_id: int, user_id: int | None = None) -> Campaign:
     # FOR UPDATE: два параллельных запроса не изменят статус одновременно (в PostgreSQL)
     query = select(Campaign).where(Campaign.id == campaign_id).with_for_update()
@@ -151,7 +145,7 @@ def submit_campaign_for_review(
     db.refresh(campaign)
     if ai.is_enabled():
         # В фоне, после ответа: рекламодатель не ждёт модель (это секунды)
-        background_tasks.add_task(run_ai_review, _session_factory(db), campaign.id)
+        background_tasks.add_task(run_ai_review, background_session_factory(db), campaign.id)
     return campaign
 
 
@@ -313,7 +307,7 @@ def ai_review_campaign(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="AI-проверка — только для кампаний на модерации")
     db.rollback()  # сетевой запрос к модели — без открытой транзакции
-    run_ai_review(_session_factory(db), campaign_id)
+    run_ai_review(background_session_factory(db), campaign_id)
     return db.scalar(
         select(Campaign).options(selectinload(Campaign.owner), selectinload(Campaign.placement))
         .where(Campaign.id == campaign_id).execution_options(populate_existing=True)

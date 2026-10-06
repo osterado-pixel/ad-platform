@@ -207,6 +207,8 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 
 ### Фоновая генерация
 
+`POST /api/v1/ai/generate-async` (то же тело) сразу отвечает 202 с `task_id`, статус и результат —
+`GET /api/v1/ai/tasks/{task_id}` (только своя задача; не больше 5 незавершённых на пользователя).
 `app/services/ai_background.py` — та же генерация, но в фоне: задача (`ai_tasks`) проходит статусы
 pending → processing → completed / failed, результат или понятная причина ошибки — в задаче.
 Оплата та же (`app/services/ai_billing.py`): резерв → расчёт по факту, при ошибке — полный возврат.

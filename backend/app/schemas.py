@@ -406,6 +406,21 @@ class AdCopyResponse(BaseModel):
     billing: AdCopyBilling
 
 
+class AITaskCreated(BaseModel):
+    task_id: str
+    status: Literal["pending"] = "pending"
+    check_status_url: str
+
+
+class AITaskResponse(BaseModel):
+    task_id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    result: AdCopyContent | None = None
+    error: str | None = None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
 # --- Универсальный контейнер постраничной выдачи ---
 T = TypeVar("T")
 

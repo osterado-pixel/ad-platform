@@ -4,19 +4,24 @@
    за запрещённый текст платный запрос не отправляется и с баланса ничего не резервируется.
 1–3. Резерв → генерация вне транзакции БД → расчёт по факту или полный возврат
      (подробно — app/services/ai_billing.py).
+
+/generate-async + /tasks/{id} — то же в фоне: ответ сразу (id задачи), результат — опросом статуса
+(app/services/ai_background.py).
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai import AIUnavailable
 from app.auth import get_current_user
-from app.database import get_db, write_lock
-from app.models import User
-from app.schemas import AdCopyResponse, AdGenerateRequest
+from app.database import background_session_factory, get_db, write_lock
+from app.models import AITask, AITaskStatus, User
+from app.schemas import AdCopyResponse, AdGenerateRequest, AITaskCreated, AITaskResponse
 from app.services import ai_billing, gemini_service
-from app.services.moderation_service import moderate_text_sync
+from app.services.ai_background import run_gemini_generation_task
+from app.services.moderation_service import check_local_rules, moderate_text_sync
 
 log = logging.getLogger(__name__)
 
@@ -71,3 +76,67 @@ def generate_ad_copy(
         data=result["content"],
         billing={"tokens_used": usage["total_tokens"], "cost_deducted": charge, "remaining_balance": remaining},
     )
+
+
+# --- Фоновая генерация: задача создаётся сразу, результат — опросом статуса ---
+MAX_ACTIVE_TASKS = 5  # незавершённых задач на пользователя: защита от засыпания очереди
+
+
+def _task_response(task: AITask) -> AITaskResponse:
+    return AITaskResponse(task_id=task.id, status=task.status.value, result=task.result,
+                          error=task.error_message, created_at=task.created_at, updated_at=task.updated_at)
+
+
+@router.post("/generate-async", response_model=AITaskCreated, status_code=status.HTTP_202_ACCEPTED)
+def start_ad_generation(
+    request: AdGenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not gemini_service.is_enabled():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="AI-копирайтер выключен: не задан GEMINI_API_KEY")
+    # Мгновенные проверки — сразу ответом, а не через задачу: стоп-фразы (без сети) и баланс.
+    # Окончательные (OpenAI Moderation, атомарный резерв денег) выполнит сама задача
+    check_local_rules(f"{request.product_description}\n{request.target_audience}")
+    hold = ai_billing.hold_amount()
+    if current_user.balance < hold:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                            detail=str(ai_billing.InsufficientFunds(hold)))
+
+    active = db.scalar(select(func.count()).select_from(AITask).where(
+        AITask.user_id == current_user.id,
+        AITask.status.in_([AITaskStatus.PENDING, AITaskStatus.PROCESSING])))
+    if active >= MAX_ACTIVE_TASKS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=f"Уже выполняется {active} AI-задач — дождитесь их завершения")
+
+    with write_lock():
+        task = AITask(user_id=current_user.id)
+        db.add(task)
+        db.commit()
+    task_id = task.id
+
+    background_tasks.add_task(
+        run_gemini_generation_task,
+        task_id=task_id,
+        user_id=current_user.id,
+        product_description=request.product_description,
+        target_audience=request.target_audience,
+        session_factory=background_session_factory(db),
+    )
+    return AITaskCreated(task_id=task_id, check_status_url=f"/api/v1/ai/tasks/{task_id}")
+
+
+@router.get("/tasks/{task_id}", response_model=AITaskResponse)
+def get_task_status(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = db.get(AITask, task_id)
+    # Чужая задача — тоже 404: не подтверждаем, что такой id существует
+    if task is None or task.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
+    return _task_response(task)
