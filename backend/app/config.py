@@ -1,5 +1,6 @@
 import os
 import secrets
+from decimal import Decimal
 from pathlib import Path
 
 from pydantic import AliasChoices, Field, model_validator
@@ -68,6 +69,13 @@ class Settings(BaseSettings):
     ai_auto_reject: bool = False
     # Ключ Google Gemini API (Google AI Studio, aistudio.google.com/apikey)
     gemini_api_key: str = ""
+    # AI-копирайтер. gemini-1.5-flash из инструкции Google отключил; 3.8 Flash — рекомендованная сейчас
+    gemini_model: str = "gemini-3.8-flash"
+    # Цены модели, $ за 1 млн токенов (ai.google.dev/gemini-api/docs/pricing). Для 3.8 Flash
+    # до 31.12.2026 — 0.75 / 3.75, с 01.01.2027 — 1.50 / 7.50: обновите при смене цен или модели
+    gemini_price_input_per_1m: Decimal = Field(default=Decimal("0.75"), ge=0)
+    gemini_price_output_per_1m: Decimal = Field(default=Decimal("3.75"), ge=0)  # включая «размышления»
+    ai_markup: Decimal = Field(default=Decimal("1.5"), ge=1)  # наценка платформы к себестоимости
 
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
