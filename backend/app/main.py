@@ -3,17 +3,22 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
 from app.database import get_db
-from app.middleware import JsonCharsetMiddleware, PublicCorsMiddleware, SecurityHeadersMiddleware
+from app.i18n import localize, localize_validation_errors, tr
+from app.middleware import JsonCharsetMiddleware, LanguageMiddleware, PublicCorsMiddleware, SecurityHeadersMiddleware
 from app.monitoring import init_sentry
 from app.pagination import PAGINATION_HEADERS
 from app.routers import ads, ai, auth, campaigns, payments, placements, plans, stats, telegram, users, wallet
@@ -54,6 +59,7 @@ app = FastAPI(
 )
 
 # Порядок: последний добавленный выполняется первым (внешний слой)
+app.add_middleware(LanguageMiddleware)
 app.add_middleware(JsonCharsetMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 # CORS для фронтенда на другом домене: только домены из CORS_ORIGINS
@@ -62,7 +68,7 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_credentials=False,  # токен передаётся заголовком Authorization, cookie не используются
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Accept-Language"],
     expose_headers=PAGINATION_HEADERS,  # фронтенд читает признак «есть ещё» для подгрузки
     max_age=600,
 )
@@ -70,6 +76,22 @@ app.add_middleware(
 app.add_middleware(PublicCorsMiddleware)
 if settings.allowed_host_list != ["*"]:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
+
+
+# Ошибки — на языке запроса (Accept-Language). В коде сообщения пишутся по-русски, перевод — app/messages.py
+@app.exception_handler(StarletteHTTPException)
+async def localized_http_exception(request: Request, exc: StarletteHTTPException):
+    if isinstance(exc.detail, str):
+        exc = StarletteHTTPException(exc.status_code, localize(exc.detail), exc.headers)
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def localized_validation_error(request: Request, exc: RequestValidationError):
+    # Тот же формат, что у FastAPI по умолчанию: {"detail": [{"loc", "msg", "type", …}]}
+    return JSONResponse(status_code=422,
+                        content={"detail": jsonable_encoder(localize_validation_errors(exc.errors()))})
+
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -91,7 +113,7 @@ app.include_router(plans.router)
 def read_root():
     return {
         "status": "online",
-        "message": "Платформа полностью активна!",
+        "message": tr("Платформа полностью активна!"),
         "web_app": "/app",
         "docs": "/docs",
     }

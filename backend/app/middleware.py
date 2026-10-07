@@ -2,6 +2,8 @@
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.i18n import language_from_header, reset_language, set_language
+
 # Публичная часть: виджет на любом сайте-партнёре запрашивает рекламу и переходит по кликам
 PUBLIC_PREFIXES = ("/api/v1/ad/", "/widget.js")
 
@@ -92,6 +94,37 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_secure)
+
+
+class LanguageMiddleware:
+    """Язык ответа — по Accept-Language: сообщения API, ошибки, тестовая страница оплаты.
+
+    Язык доступен всему запросу через app.i18n.current_language() (contextvars: виден и в
+    синхронных эндпоинтах — они выполняются в пуле потоков с копией контекста).
+    """
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        header = next((v.decode("latin-1") for k, v in scope["headers"] if k == b"accept-language"), None)
+        lang = language_from_header(header)
+        token = set_language(lang)
+
+        async def send_with_language(message: Message):
+            if message["type"] == "http.response.start" and scope["path"].startswith("/api/"):
+                h = MutableHeaders(scope=message)
+                h.setdefault("Content-Language", lang)
+                # Кэши (CDN, браузер) не должны отдать немцу ответ, сохранённый для англичанина
+                h.add_vary_header("Accept-Language")
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_language)
+        finally:
+            reset_language(token)
 
 
 class JsonCharsetMiddleware:

@@ -514,6 +514,13 @@ def test_cabinet_language_follows_browser_and_switcher(server, browser):
     expect(page.locator(".tabs button.on")).to_have_text("Anmelden")
     assert page.evaluate("document.documentElement.lang") == "de"
 
+    # Ошибка сервера — тоже по-немецки: кабинет передаёт язык в Accept-Language
+    page.fill("#auth-email", "nobody@e2e.ru")
+    page.fill("#auth-password", PASSWORD)
+    page.click("form button[type=submit]")
+    expect(page.locator(".notice.error")).to_have_text("E-Mail-Adresse oder Passwort ist falsch")
+    errors[:] = [e for e in errors if "401" not in e]  # браузер пишет в консоль ожидаемый ответ 401
+
     page.click(".tabs button:has-text('Registrieren')")
     page.fill("#auth-email", "lang@e2e.ru")
     page.fill("#auth-password", PASSWORD)

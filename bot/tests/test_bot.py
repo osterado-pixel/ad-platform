@@ -59,12 +59,17 @@ class FakeAPI:
 
     def __init__(self):
         self.calls = []
+        self.languages = []  # язык каждого обращения (Accept-Language у настоящего клиента)
         self.linked = True
         self.account = Account(email="adv@example.com", balance=12.5, held_balance=0.0)
         self.generate_error: ApiError | None = None
         self.task_states = [{"status": "processing"},
                             {"status": "completed", "result": {"variants": [
                                 {"title": "Python с нуля", "text": "40 уроков", "cta": "Записаться"}]}}]
+
+    def with_language(self, lang):
+        self.languages.append(lang)
+        return self
 
     def _check_linked(self):
         if not self.linked:
@@ -87,8 +92,8 @@ class FakeAPI:
         self._check_linked()
         return self.account
 
-    async def generate(self, telegram_id, product_description, target_audience):
-        self.calls.append(("generate", telegram_id, product_description, target_audience))
+    async def generate(self, telegram_id, product_description, target_audience, language):
+        self.calls.append(("generate", telegram_id, product_description, target_audience, language))
         self._check_linked()
         if self.generate_error:
             raise self.generate_error
@@ -121,13 +126,14 @@ def chat():
     dp = main.build_dispatcher(api, SITE)
     counter = {"n": 0}
 
-    def send(text: str) -> list[str]:
+    def send(text: str, lang: str | None = "ru") -> list[str]:
+        """lang — язык Telegram пользователя (language_code); по умолчанию русский."""
         counter["n"] += 1
         before = len(session.sent)
         update = Update(update_id=counter["n"], message=Message(
             message_id=counter["n"], date=datetime.datetime.now(), text=text,
             chat=Chat(id=USER_ID, type="private"),
-            from_user=User(id=USER_ID, is_bot=False, first_name="Тест")))
+            from_user=User(id=USER_ID, is_bot=False, first_name="Тест", language_code=lang)))
         asyncio.run(dp.feed_update(bot, update))
         return session.sent[before:]
 
@@ -180,7 +186,7 @@ def test_generate_dialog(chat):
     assert "Опишите товар" in ask
     [progress] = chat.send("Онлайн-курс Python для начинающих\nАудитория: студенты")
     assert "заморожено 0,03" in progress
-    assert ("generate", USER_ID, "Онлайн-курс Python для начинающих", "студенты") in chat.api.calls
+    assert ("generate", USER_ID, "Онлайн-курс Python для начинающих", "студенты", "ru") in chat.api.calls
     [result] = chat.session.edited
     assert "Заголовок: Python с нуля" in result and "Призыв: Записаться" in result
     # Диалог завершён: следующий текст — не описание товара
@@ -190,7 +196,7 @@ def test_generate_dialog(chat):
 
 def test_generate_one_shot_and_default_audience(chat):
     chat.send("/generate Кофейня у метро, завтраки до 12:00")
-    assert ("generate", USER_ID, "Кофейня у метро, завтраки до 12:00", "Общая аудитория") in chat.api.calls
+    assert ("generate", USER_ID, "Кофейня у метро, завтраки до 12:00", "Общая аудитория", "ru") in chat.api.calls
 
 
 def test_generate_too_short_and_cancel(chat):
@@ -241,6 +247,49 @@ def test_wait_for_task_gives_up():
 
 
 def test_parse_input():
-    assert generate.parse_input("Курс Python\nАудитория: студенты\nещё строка") == (
+    assert generate.parse_input("Курс Python\nАудитория: студенты\nещё строка", "Все") == (
         "Курс Python\nещё строка", "студенты")
-    assert generate.parse_input("  Курс  ") == ("Курс", "Общая аудитория")
+    assert generate.parse_input("  Курс  ", "Все") == ("Курс", "Все")
+    # Подпись аудитории — на любом из трёх языков
+    assert generate.parse_input("Python course\nAudience: students", "-") == ("Python course", "students")
+    assert generate.parse_input("Kurs\nZielgruppe: Studierende", "-") == ("Kurs", "Studierende")
+
+
+# ---------- Языки ----------
+def test_english_user(chat):
+    [reply] = chat.send("/start", lang="en")
+    assert reply.startswith("Hello! Account: adv@example.com") and "/generate" in reply
+    chat.api.account = Account(email="adv@example.com", balance=1234.5, held_balance=0.03)
+    [reply] = chat.send("/balance", lang="en")
+    assert "Balance: 1,234.50" in reply and "On hold for generations: 0.03" in reply
+    chat.send("/generate Python course for beginners", lang="en")
+    assert ("generate", USER_ID, "Python course for beginners", "General audience", "en") in chat.api.calls
+    assert "Headline: Python с нуля" in chat.session.edited[0]
+    assert chat.api.languages[-1] == "en"  # ошибки сервера придут по-английски
+
+
+def test_german_user(chat):
+    chat.api.linked = False
+    [reply] = chat.send("/start", lang="de")
+    assert reply.startswith("Hallo!") and f"({SITE}/app)" in reply and "/link CODE" in reply
+    chat.api.linked = True
+    chat.api.account = Account(email="adv@example.com", balance=1234.5, held_balance=0.0)
+    [reply] = chat.send("/balance", lang="de")
+    assert "Guthaben: 1.234,50" in reply
+    chat.send("/generate Kaffee am Bahnhof, Frühstück bis 12 Uhr", lang="de")
+    assert ("generate", USER_ID, "Kaffee am Bahnhof, Frühstück bis 12 Uhr", "Allgemeines Publikum", "de") \
+        in chat.api.calls
+
+
+@pytest.mark.parametrize("code", ["fr", "pt-br", None])
+def test_other_languages_get_english(chat, code):
+    [reply] = chat.send("/help", lang=code)
+    assert reply.startswith("What the bot can do")
+
+
+def test_menu_commands_in_every_language():
+    for lang in ("en", "ru", "de"):
+        cmds = main.commands(lang)
+        assert [c.command for c in cmds] == ["generate", "balance", "link", "unlink", "help"]
+        assert all(c.description for c in cmds)
+    assert main.commands("de")[0].description == "Anzeige schreiben"

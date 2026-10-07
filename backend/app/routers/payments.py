@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
+from app.i18n import current_language, tr
 from app.models import Payment, PaymentPurpose, PaymentStatus, User
 from app.pagination import fetch_page_with_total, limit_param, offset_param
 from app.payments import PaymentProviderError, WebhookRejected, get_provider
@@ -103,18 +104,21 @@ def _test_payment(db: Session, payment_id: str) -> Payment:
 def test_checkout_page(payment_id: str, db: Session = Depends(get_db)):
     payment = _test_payment(db, payment_id)
     amount = html.escape(f"{payment.amount:.2f} {payment.currency}")
+    # Язык страницы — язык браузера (Accept-Language); тексты переводов — наши, без пользовательского ввода
+    title = tr("Тестовая оплата")
     if payment.status != PaymentStatus.PENDING:
-        body = f"<p>Платёж уже обработан: <b>{html.escape(payment.status.value)}</b>.</p><p><a href='/app#/wallet'>В кошелёк</a></p>"
+        body = (f"<p>{tr('Платёж уже обработан:')} <b>{html.escape(payment.status.value)}</b>.</p>"
+                f"<p><a href='/app#/wallet'>{tr('В кошелёк')}</a></p>")
     else:
-        body = (f"<p>Сумма: <b>{amount}</b></p>"
-                "<form method='post'><button name='result' value='succeeded'>Оплатить</button> "
-                "<button name='result' value='canceled'>Отменить</button></form>")
+        body = (f"<p>{tr('Сумма:')} <b>{amount}</b></p>"
+                f"<form method='post'><button name='result' value='succeeded'>{tr('Оплатить')}</button> "
+                f"<button name='result' value='canceled'>{tr('Отменить')}</button></form>")
     return HTMLResponse(
-        "<!doctype html><html lang='ru'><head><meta charset='utf-8'><meta name='viewport' "
-        "content='width=device-width,initial-scale=1'><title>Тестовая оплата</title></head>"
+        f"<!doctype html><html lang='{current_language()}'><head><meta charset='utf-8'><meta name='viewport' "
+        f"content='width=device-width,initial-scale=1'><title>{title}</title></head>"
         "<body style='font-family:system-ui;max-width:420px;margin:48px auto;padding:0 16px'>"
-        "<h1>Тестовая оплата</h1><p style='color:#b45309'><b>Деньги ненастоящие</b> — тестовый режим "
-        "платежей (PAYMENTS_PROVIDER=test).</p>" + body + "</body></html>",
+        f"<h1>{title}</h1><p style='color:#b45309'><b>{tr('Деньги ненастоящие')}</b> — "
+        f"{tr('тестовый режим платежей (PAYMENTS_PROVIDER=test).')}</p>" + body + "</body></html>",
         # Своя политика вместо API-шной default-src 'none': встроенные стили страницы и отправка формы —
         # только себе; скрипты, картинки, встраивание во фреймы — по-прежнему запрещены
         headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; "

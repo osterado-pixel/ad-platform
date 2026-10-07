@@ -9,8 +9,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
 
-import texts
 from api_client import ApiError, PlatformAPI
+from texts import AUDIENCE_PREFIXES, Texts
 
 
 POLL_LIMIT_SECONDS = 150  # дольше генерация не идёт — дальше задачу закроет очистка зависших на сервере
@@ -21,12 +21,12 @@ class GenerateStates(StatesGroup):
     description = State()
 
 
-def parse_input(text: str) -> tuple[str, str]:
-    """«Описание\\nАудитория: …» → (описание, аудитория)."""
-    description, audience = text.strip(), "Общая аудитория"
+def parse_input(text: str, default_audience: str) -> tuple[str, str]:
+    """«Описание\\nАудитория: …» → (описание, аудитория). «Audience:» и «Zielgruppe:» — тоже."""
+    description, audience = text.strip(), default_audience
     lines = description.splitlines()
     for i, line in enumerate(lines):
-        if line.strip().lower().startswith("аудитория:"):
+        if line.strip().lower().startswith(AUDIENCE_PREFIXES):
             audience = line.split(":", 1)[1].strip() or audience
             description = "\n".join(lines[:i] + lines[i + 1:]).strip()
             break
@@ -47,58 +47,57 @@ async def wait_for_task(api: PlatformAPI, telegram_id: int, task_id: str,
     return None
 
 
-async def run_generation(message: Message, text: str, api: PlatformAPI, site_url: str) -> None:
-    description, audience = parse_input(text)
+async def run_generation(message: Message, text: str, api: PlatformAPI, site_url: str, t: Texts) -> None:
+    description, audience = parse_input(text, t("default_audience"))
     if len(description) < MIN_DESCRIPTION:
-        await message.answer(f"Опишите подробнее — от {MIN_DESCRIPTION} символов.\n\n{texts.ASK_DESCRIPTION}")
+        await message.answer(f"{t('too_short', count=MIN_DESCRIPTION)}\n\n{t('ask_description')}")
         return
     telegram_id = message.from_user.id
     try:
-        created = await api.generate(telegram_id, description, audience)
+        # Объявление — на языке пользователя; ошибки сервер присылает на нём же
+        created = await api.generate(telegram_id, description, audience, language=t.lang)
     except ApiError as e:
         # 404 — не привязан; 402 — мало денег; 422 — текст не прошёл модерацию; 429 — много задач; 503 — выключен
-        await message.answer(texts.not_linked(site_url) if e.status == 404 else e.detail)
+        await message.answer(t.not_linked(site_url) if e.status == 404 else e.detail)
         return
 
-    progress = await message.answer(
-        f"Составляю объявление… На время генерации заморожено {texts.money(created['held_amount'])}, "
-        "спишется по факту.")
+    progress = await message.answer(t("progress", amount=t.money(created["held_amount"])))
     try:
         task = await wait_for_task(api, telegram_id, created["task_id"])
     except ApiError as e:
-        await progress.edit_text(f"Не удалось получить результат: {e.detail}")
+        await progress.edit_text(t("result_error", detail=e.detail))
         return
     if task is None:
-        await progress.edit_text("Генерация идёт дольше обычного. Если задача не завершится, деньги вернутся "
-                                 "автоматически.")
+        await progress.edit_text(t("timeout"))
     elif task["status"] == "completed":
-        await progress.edit_text(texts.variants(task["result"]["variants"]))
+        await progress.edit_text(t.variants(task["result"]["variants"]))
     else:
-        await progress.edit_text(task.get("error") or "Генерация не удалась. Деньги не списаны")
+        await progress.edit_text(task.get("error") or t("failed"))
 
 
 async def generate_command(message: Message, command: CommandObject, state: FSMContext,
-                           api: PlatformAPI, site_url: str) -> None:
+                           api: PlatformAPI, site_url: str, t: Texts) -> None:
     if command.args:  # /generate описание — сразу
         await state.clear()
-        await run_generation(message, command.args, api, site_url)
+        await run_generation(message, command.args, api, site_url, t)
         return
     await state.set_state(GenerateStates.description)
-    await message.answer(texts.ASK_DESCRIPTION)
+    await message.answer(t("ask_description"))
 
 
-async def cancel(message: Message, state: FSMContext) -> None:
+async def cancel(message: Message, state: FSMContext, t: Texts) -> None:
     await state.clear()
-    await message.answer("Отменено.\n\n" + texts.HELP)
+    await message.answer(f"{t('cancelled')}\n\n{t('help')}")
 
 
-async def description_entered(message: Message, state: FSMContext, api: PlatformAPI, site_url: str) -> None:
+async def description_entered(message: Message, state: FSMContext, api: PlatformAPI, site_url: str,
+                              t: Texts) -> None:
     await state.clear()
-    await run_generation(message, message.text, api, site_url)
+    await run_generation(message, message.text, api, site_url, t)
 
 
-async def anything_else(message: Message) -> None:
-    await message.answer("Не понял команду.\n\n" + texts.HELP)
+async def anything_else(message: Message, t: Texts) -> None:
+    await message.answer(f"{t('unknown')}\n\n{t('help')}")
 
 
 def register(router: Router) -> None:

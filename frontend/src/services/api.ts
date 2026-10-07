@@ -25,12 +25,19 @@ function errorText(data: unknown, status: number): string {
   return `HTTP ${status}`;
 }
 
+// Язык ответов API (ошибки, сообщения) — язык страницы: <html lang> задаёт app/[lang]/layout.tsx
+function pageLanguage(): string | null {
+  return typeof document === "undefined" ? null : document.documentElement.lang || null;
+}
+
 export async function api<T>(path: string, options: RequestInit & { token?: string | null } = {}): Promise<T> {
   const { token = getToken(), headers, ...rest } = options;
+  const lang = pageLanguage();
   const response = await fetch(`${API_URL}${path}`, {
     ...rest,
     headers: {
       "Content-Type": "application/json",
+      ...(lang ? { "Accept-Language": lang } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },

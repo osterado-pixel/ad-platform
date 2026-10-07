@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import write_lock
+from app.i18n import tr
 from app.ledger import add_transaction
 from app.models import (
     Payment, PaymentPurpose, PaymentStatus, Plan, Subscription, SubscriptionStatus, TransactionType, User,
@@ -38,7 +39,8 @@ def create_payment(db: Session, user_id: int, purpose: PaymentPurpose, amount: D
     with write_lock():
         db.add(payment)
         db.commit()
-    description = f"Тариф «{plan.name}»" if plan else "Пополнение баланса Ad Platform"
+    # Назначение платежа видно на странице банка — на языке пользователя
+    description = tr("Тариф «{name}»", name=plan.name) if plan else tr("Пополнение баланса Ad Platform")
     try:
         created = provider.create_payment(payment, description, return_url)
     except PaymentProviderError:

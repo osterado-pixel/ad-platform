@@ -7,7 +7,7 @@ from pydantic import (
     UrlConstraints, field_validator, model_validator,
 )
 
-from app.i18n import Language
+from app.i18n import Language, localize
 from app.models import CampaignStatus, TransactionType, UserRole
 
 
@@ -35,6 +35,10 @@ Money = Annotated[Decimal, PlainSerializer(_money_json, return_type=float, when_
 UtcDatetime = Annotated[
     datetime, AfterValidator(lambda v: v if v.tzinfo else v.replace(tzinfo=timezone.utc))
 ]
+
+# Сообщение сервера, сохранённое по-русски (описание операции, ошибка задачи, автоотказ): в ответе —
+# на языке запроса (Accept-Language). Текст пользователя (причина от модератора) не меняется
+LocalizedText = Annotated[str, PlainSerializer(localize, return_type=str)]
 
 # Email целиком в нижнем регистре, чтобы Test@mail.ru и test@mail.ru не были разными аккаунтами
 NormalizedEmail = Annotated[EmailStr, AfterValidator(str.lower)]
@@ -183,7 +187,7 @@ class CampaignResponse(CampaignBase):
     id: int
     user_id: int
     status: CampaignStatus
-    rejection_reason: str | None = None
+    rejection_reason: LocalizedText | None = None
     impressions_count: int = 0
     clicks_count: int = 0
     start_date: UtcDatetime | None = None
@@ -199,7 +203,7 @@ class CampaignAdminResponse(CampaignResponse):
     ai_verdict: Literal["approve", "review", "reject", "error"] | None = None
     ai_risk: Literal["low", "medium", "high"] | None = None
     ai_reasons: list[str] | None = None
-    ai_summary: str | None = None
+    ai_summary: LocalizedText | None = None  # при сбое проверки — сообщение сервера
     ai_checked_at: UtcDatetime | None = None
 
 
@@ -289,7 +293,7 @@ class TransactionResponse(BaseModel):
     amount: Money  # Всегда положительное, направление задаёт type
     type: TransactionType
     campaign_id: int | None = None
-    description: str | None = None
+    description: LocalizedText | None = None
     created_at: UtcDatetime
 
 
@@ -422,14 +426,14 @@ class AITaskCreated(BaseModel):
     status: Literal["pending"] = "pending"
     check_status_url: str
     held_amount: Money = Field(description="Заморожено на балансе до завершения задачи")
-    message: str = "Средства зарезервированы, задача запущена"
+    message: LocalizedText = "Средства зарезервированы, задача запущена"
 
 
 class AITaskResponse(BaseModel):
     task_id: str
     status: Literal["pending", "processing", "completed", "failed"]
     result: AdCopyContent | None = None
-    error: str | None = None
+    error: LocalizedText | None = None
     created_at: UtcDatetime
     updated_at: UtcDatetime
 
