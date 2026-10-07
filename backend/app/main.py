@@ -21,7 +21,9 @@ from app.i18n import localize, localize_validation_errors, tr
 from app.middleware import JsonCharsetMiddleware, LanguageMiddleware, PublicCorsMiddleware, SecurityHeadersMiddleware
 from app.monitoring import init_sentry
 from app.pagination import PAGINATION_HEADERS
-from app.routers import ads, ai, auth, campaigns, payments, placements, plans, stats, telegram, users, wallet
+from app.routers import (
+    ads, ai, auth, campaigns, partners, payments, placements, plans, stats, telegram, users, wallet,
+)
 
 # Схема БД управляется миграциями Alembic: `alembic upgrade head` из папки backend/
 
@@ -108,6 +110,8 @@ app.include_router(telegram.router)
 app.include_router(telegram.bot_router)
 app.include_router(payments.router)
 app.include_router(plans.router)
+app.include_router(partners.router)
+app.include_router(partners.admin_router)
 
 @app.get("/")
 def read_root():

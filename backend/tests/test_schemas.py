@@ -71,7 +71,7 @@ def test_placement_response_from_orm():
                   price_per_day=Decimal("100.00"), price_per_click=Decimal("1.50"), is_active=True)
     dumped = PlacementResponse.model_validate(p).model_dump(mode="json")
     assert dumped == {"id": 5, "name": "Баннер", "code_identifier": "banner",
-                      "price_per_day": 100.0, "price_per_click": 1.5, "is_active": True}
+                      "price_per_day": 100.0, "price_per_click": 1.5, "is_active": True, "site_id": None}
 
 
 CAMPAIGN = {"placement_id": 1, "title": "Осенняя распродажа", "target_url": "https://shop.ru/sale?x=1"}

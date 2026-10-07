@@ -8,7 +8,9 @@ from pydantic import (
 )
 
 from app.i18n import Language, localize
-from app.models import CampaignStatus, TransactionType, UserRole
+from app.models import (
+    CampaignStatus, PartnerTxType, PayoutStatus, SiteStatus, TransactionType, UserRole,
+)
 
 
 def _check_bcrypt_limit(password: str) -> str:
@@ -122,6 +124,7 @@ class PlacementResponse(PlacementBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    site_id: int | None = None  # сайт партнёра; null — площадка платформы
 
 
 # --- Схемы Кампаний (Campaigns) ---
@@ -577,3 +580,156 @@ class MyPlan(BaseModel):
 class PlanPurchaseResponse(BaseModel):
     payment: PaymentResponse | None = Field(default=None, description="Платный тариф — перейти по confirmation_url")
     subscription: SubscriptionResponse | None = Field(default=None, description="Бесплатный — активирован сразу")
+
+
+# --- Партнёрская программа: сайты, заработок, выплаты ---
+class SiteCreate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [{"name": "Блог о путешествиях", "url": "https://travel-blog.example.com"}]})
+
+    name: Title
+    url: WebUrl
+
+
+class SiteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    url: str
+    domain: str
+    status: SiteStatus
+    rejection_reason: str | None = None
+    revenue_share: float = Field(validation_alias="effective_share",
+                                 description="Доля партнёра от цены клика: 0.6 = 60%")
+    created_at: UtcDatetime
+
+
+class SiteAdminResponse(SiteResponse):
+    user_id: int
+    owner_email: str
+    custom_share: bool = Field(description="У сайта своя доля, а не общая из настроек")
+
+
+class SiteModerate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [
+        {"status": "approved"},
+        {"status": "rejected", "reason": "Сайт не открывается"},
+        {"status": "approved", "revenue_share": 0.7},
+    ]})
+
+    status: Literal[SiteStatus.APPROVED, SiteStatus.REJECTED, SiteStatus.BLOCKED]
+    reason: str | None = Field(default=None, max_length=1000)
+    # Своя доля сайта (0–1); null — не менять. Чтобы вернуть общую, передайте reset_share
+    revenue_share: Decimal | None = Field(default=None, ge=0, le=1, decimal_places=3)
+    reset_share: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def _strip_reason(cls, v: str | None) -> str | None:
+        return (v.strip() or None) if v is not None else None
+
+    @model_validator(mode="after")
+    def _check_reason(self) -> "SiteModerate":
+        if self.status != SiteStatus.APPROVED and not self.reason:
+            raise ValueError("При отклонении или блокировке сайта укажите причину (reason)")
+        if self.status == SiteStatus.APPROVED:
+            self.reason = None
+        return self
+
+
+class PartnerPlacementCreate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"name": "Баннер под статьёй"}]})
+
+    name: Title
+
+
+class PartnerTotals(BaseModel):
+    impressions: int
+    clicks: int
+    revenue: Money = Field(description="Оборот: сколько заплатили рекламодатели за клики")
+    earnings: Money = Field(description="Доля партнёра")
+    ctr: float = Field(description="Клики / показы, %, 2 знака")
+
+
+class PartnerDayStat(PartnerTotals):
+    day: date
+
+
+class PartnerSiteTotals(PartnerTotals):
+    site_id: int
+    name: str
+    status: SiteStatus
+
+
+class PartnerSummary(BaseModel):
+    earnings_balance: Money = Field(description="Доступно к выводу")
+    pending: Money = Field(description="Созревает (станет доступно через hold_days дней после клика)")
+    hold_days: int
+    payout_min_amount: Money
+    revenue_share: float = Field(description="Общая доля партнёра от цены клика")
+    period_start: date
+    period_end: date
+    totals: PartnerTotals
+    days: list[PartnerDayStat]
+    sites: list[PartnerSiteTotals]
+
+
+class PartnerTransactionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    amount: Money
+    type: PartnerTxType
+    payout_id: int | None = None
+    description: LocalizedText | None = None
+    created_at: UtcDatetime
+
+
+PayoutMethod = Literal["paypal", "bank", "card", "crypto", "other"]
+PartnerAmount = Annotated[Decimal, Field(gt=0, le=1_000_000, max_digits=12, decimal_places=2)]
+
+
+class PayoutCreate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [
+        {"amount": 50, "method": "paypal", "details": "partner@example.com"}]})
+
+    amount: PartnerAmount
+    method: PayoutMethod
+    details: str = Field(min_length=3, max_length=500, description="Реквизиты: email PayPal, IBAN, номер карты…")
+
+    @field_validator("details")
+    @classmethod
+    def _strip_details(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("Укажите реквизиты для выплаты")
+        return v
+
+
+class TransferRequest(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"amount": 15}]})
+
+    amount: PartnerAmount
+
+
+class PayoutResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    amount: Money
+    method: str
+    details: str
+    status: PayoutStatus
+    admin_note: str | None = None
+    created_at: UtcDatetime
+    processed_at: UtcDatetime | None = None
+
+
+class PayoutAdminResponse(PayoutResponse):
+    user_id: int
+    owner_email: str
+
+
+class PayoutProcess(BaseModel):
+    note: str | None = Field(default=None, max_length=500)

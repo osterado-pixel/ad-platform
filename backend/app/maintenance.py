@@ -79,6 +79,19 @@ def purge_sync(session_factory: Callable[[], Session] = SessionLocal) -> PurgeRe
     return result
 
 
+def mature_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
+    """Зачисление созревшего заработка партнёров (партнёру оно происходит и при открытии кабинета)."""
+    from app.services.partners import mature
+    try:
+        with session_factory() as db:
+            amount = mature(db)
+    except SQLAlchemyError:
+        log.exception("Ошибка при зачислении заработка партнёров")
+        return
+    if amount:
+        log.info("Партнёрам зачислен созревший заработок: %s", amount)
+
+
 async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS) -> None:
     """Раз в сутки, пока работает сервер (первый раз — сразу после запуска).
 
@@ -88,6 +101,8 @@ async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS)
         try:
             if settings.auto_purge:
                 await asyncio.to_thread(purge_sync)
+            # Созревший заработок партнёров — в «доступно к выводу» (не удаление, поэтому без AUTO_PURGE)
+            await asyncio.to_thread(mature_sync)
             await asyncio.sleep(interval_seconds)
         except asyncio.CancelledError:
             raise  # остановка сервера

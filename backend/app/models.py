@@ -48,6 +48,7 @@ class User(Base):
     __table_args__ = (
         CheckConstraint("balance >= 0", name="ck_users_balance_nonneg"),
         CheckConstraint("held_balance >= 0", name="ck_users_held_balance_nonneg"),
+        CheckConstraint("earnings_balance >= 0", name="ck_users_earnings_balance_nonneg"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -62,6 +63,9 @@ class User(Base):
     # Замороженная сумма: резерв под AI-генерации, которые ещё выполняются (app/services/ai_billing.py).
     # В balance она уже не входит; после генерации — списывается по факту или возвращается в balance
     held_balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    # Заработок партнёра, доступный к выводу (уже «созрел» — см. app/services/partners.py).
+    # Отдельно от balance: рекламный баланс тратится на клики, а этот — выплачивается партнёру
+    earnings_balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     # Число записей в журнале транзакций — total для истории без COUNT(*) (см. app/ledger.py)
     transactions_count: Mapped[int] = mapped_column(default=0, server_default="0")
     # Версия токенов: смена пароля увеличивает её, и все ранее выданные токены перестают действовать
@@ -108,8 +112,153 @@ class Placement(Base):
     price_per_day: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     price_per_click: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     is_active: Mapped[bool] = mapped_column(default=True, server_default="1")
+    # Сайт партнёра, на котором стоит площадка. NULL — площадка самой платформы (весь доход — платформе)
+    site_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
 
     campaigns: Mapped[list["Campaign"]] = relationship(back_populates="placement")
+    site: Mapped["Site | None"] = relationship(back_populates="placements")
+
+
+class SiteStatus(str, enum.Enum):
+    PENDING = "pending"    # ждёт проверки администратором
+    APPROVED = "approved"  # реклама показывается, партнёр зарабатывает
+    REJECTED = "rejected"  # не прошёл проверку (причина — в rejection_reason)
+    BLOCKED = "blocked"    # заблокирован после одобрения (накрутка, запрещённый контент)
+
+
+class Site(Base):
+    """Сайт партнёра (владельца площадок). Реклама на его площадках идёт только после одобрения."""
+    __tablename__ = "sites"
+    __table_args__ = (
+        CheckConstraint("revenue_share IS NULL OR (revenue_share >= 0 AND revenue_share <= 1)",
+                        name="ck_sites_revenue_share"),
+        Index("ix_sites_user_id_id", "user_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    name: Mapped[str] = mapped_column(String(255))
+    url: Mapped[str] = mapped_column(String(2048))
+    # Домен без www — один сайт не может принадлежать двум партнёрам
+    domain: Mapped[str] = mapped_column(String(255), unique=True)
+    status: Mapped[SiteStatus] = mapped_column(
+        _enum(SiteStatus, "site_status"), default=SiteStatus.PENDING,
+        server_default=SiteStatus.PENDING.value, index=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    # Доля партнёра от цены клика (0.6 = 60%). NULL — общая из настроек (PUBLISHER_REVENUE_SHARE)
+    revenue_share: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    owner: Mapped["User"] = relationship()
+    placements: Mapped[list["Placement"]] = relationship(back_populates="site")
+
+    @property
+    def owner_email(self) -> str:
+        return self.owner.email
+
+    @property
+    def custom_share(self) -> bool:
+        return self.revenue_share is not None
+
+    @property
+    def effective_share(self) -> Decimal:
+        """Доля партнёра, по которой сейчас начисляется заработок."""
+        from app.config import settings
+        return settings.publisher_revenue_share if self.revenue_share is None else self.revenue_share
+
+
+class SiteDailyStat(Base):
+    """Статистика сайта партнёра за день (UTC): показы, клики, оборот (цена кликов) и доля партнёра."""
+    __tablename__ = "site_daily_stats"
+
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    impressions: Mapped[int] = mapped_column(default=0, server_default="0")
+    clicks: Mapped[int] = mapped_column(default=0, server_default="0")
+    revenue: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    earnings: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+
+
+class EarningSource(str, enum.Enum):
+    SITE = "site"          # доля от кликов на сайтах партнёра
+    REFERRAL = "referral"  # реферальное вознаграждение
+
+
+class PartnerEarning(Base):
+    """Начисления партнёру за день. Пока matured = false, деньги «созревают» (EARNINGS_HOLD_DAYS):
+    за это время накрутку можно найти и не платить за неё. Созревшие переходят в users.earnings_balance."""
+    __tablename__ = "partner_earnings"
+    __table_args__ = (
+        Index("ix_partner_earnings_matured_day", "matured", "day"),
+    )
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    source: Mapped[EarningSource] = mapped_column(_enum(EarningSource, "earning_source"), primary_key=True)
+    amount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    matured: Mapped[bool] = mapped_column(default=False, server_default="0")
+
+
+class PartnerTxType(str, enum.Enum):
+    EARNING = "earning"              # созревший заработок зачислен к выводу
+    PAYOUT = "payout"                # заявка на выплату (сумма списана с заработка)
+    PAYOUT_RETURN = "payout_return"  # заявка отклонена — сумма вернулась
+    TO_BALANCE = "to_balance"        # переведено на рекламный баланс
+
+
+class PartnerTransaction(Base):
+    """Журнал заработка партнёра: earnings_balance = earning + payout_return − payout − to_balance."""
+    __tablename__ = "partner_transactions"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_partner_transactions_amount_positive"),
+        Index("ix_partner_transactions_user_id_id", "user_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    amount: Mapped[Decimal] = mapped_column(Money)
+    type: Mapped[PartnerTxType] = mapped_column(_enum(PartnerTxType, "partner_tx_type"))
+    payout_id: Mapped[int | None] = mapped_column(ForeignKey("payouts.id", ondelete="SET NULL"))
+    description: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class PayoutStatus(str, enum.Enum):
+    PENDING = "pending"    # ждёт выплаты администратором
+    PAID = "paid"          # деньги отправлены
+    REJECTED = "rejected"  # отклонена, сумма вернулась на заработок
+
+
+class Payout(Base):
+    """Заявка партнёра на вывод заработка. Деньги переводит администратор вручную и отмечает заявку."""
+    __tablename__ = "payouts"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_payouts_amount_positive"),
+        Index("ix_payouts_user_id_id", "user_id", "id"),
+        Index("ix_payouts_status_id", "status", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    amount: Mapped[Decimal] = mapped_column(Money)
+    method: Mapped[str] = mapped_column(String(20))      # paypal, bank, card, crypto, other
+    details: Mapped[str] = mapped_column(String(500))    # реквизиты, куда платить
+    status: Mapped[PayoutStatus] = mapped_column(
+        _enum(PayoutStatus, "payout_status"), default=PayoutStatus.PENDING,
+        server_default=PayoutStatus.PENDING.value)
+    admin_note: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    owner: Mapped["User"] = relationship()
+
+    @property
+    def owner_email(self) -> str:
+        return self.owner.email
 
 
 class Campaign(Base):

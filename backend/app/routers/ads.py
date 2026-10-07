@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import re
 import time
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -12,7 +13,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db, write_lock
 from app.ledger import add_transaction
-from app.models import Campaign, CampaignStatus, Click, Placement, TransactionType, User
+from app.models import (
+    Campaign, CampaignStatus, Click, EarningSource, Placement, Site, SiteStatus, TransactionType, User,
+)
+from app.services import partners
 from app.schemas import AdResponse
 from app.stats import bump_daily
 
@@ -26,14 +30,17 @@ BOT_UA = re.compile(r"bot|crawl|spider|slurp|preview|facebookexternalhit|whatsap
 
 
 def _active_campaigns():
-    """Кампании, которые сейчас активны: статус ACTIVE, в периоде показа, на активной площадке."""
+    """Кампании, которые сейчас активны: статус ACTIVE, в периоде показа, на активной площадке
+    (площадка платформы или сайта партнёра, одобренного администратором)."""
     now = func.now()
     return (
         select(Campaign)
         .join(Campaign.placement)
+        .outerjoin(Placement.site)
         .where(
             Campaign.status == CampaignStatus.ACTIVE,
             Placement.is_active.is_(True),
+            or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED),
             or_(Campaign.start_date.is_(None), Campaign.start_date <= now),
             or_(Campaign.end_date.is_(None), Campaign.end_date >= now),
         )
@@ -64,13 +71,16 @@ def serve_ad(
                             detail="empty_status: допустимо 404 или 204")
 
     # Шаг A: Ищем активную рекламную площадку по ее коду
-    placement_id = db.scalar(
-        select(Placement.id).where(
+    placement = db.execute(
+        select(Placement.id, Placement.site_id)
+        .outerjoin(Placement.site)
+        .where(
             Placement.code_identifier == placement_code,
             Placement.is_active.is_(True),
+            or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED),
         )
-    )
-    if placement_id is None:
+    ).one_or_none()
+    if placement is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Рекламная площадка не найдена или деактивирована",
@@ -83,7 +93,7 @@ def serve_ad(
         _active_campaigns()
         .join(Campaign.owner)
         .where(
-            Campaign.placement_id == placement_id,
+            Campaign.placement_id == placement.id,
             User.balance >= Placement.price_per_click,
         )
         .order_by(func.random())
@@ -116,6 +126,8 @@ def serve_ad(
                 .values(impressions_count=Campaign.impressions_count + 1)
             )
             bump_daily(db, ad.campaign_id, impressions=1)
+            if placement.site_id is not None:
+                partners.bump_site_daily(db, placement.site_id, impressions=1)
             db.commit()
 
     response.headers.update(NO_STORE)
@@ -134,7 +146,8 @@ def _ip_hash(request: Request) -> str:
 def _charge_click(db: Session, request: Request, campaign) -> bool:
     """Списывает цену клика с владельца. True — клик оплачен и засчитан.
 
-    campaign — строка (id, user_id, title, price) из track_click.
+    campaign — строка (id, user_id, title, price, site_id, publisher_id, revenue_share) из track_click.
+    Клик на сайте партнёра: его доля начисляется в той же транзакции БД, что и списание.
     """
     if _is_bot(request):
         return False
@@ -194,6 +207,12 @@ def _charge_click(db: Session, request: Request, campaign) -> bool:
                 # description — String(255), а title может быть до 255 символов: обрезаем
                 description=f"Списание за клик по кампании #{campaign.id} ({campaign.title})"[:255],
             )
+        if campaign.site_id is not None:
+            # Свои объявления на своём сайте: партнёр заплатил бы сам себе — доли нет
+            share = (partners.share_of(price, campaign.revenue_share)
+                     if campaign.publisher_id != campaign.user_id else Decimal("0"))
+            partners.bump_site_daily(db, campaign.site_id, clicks=1, revenue=price, earnings=share)
+            partners.accrue(db, campaign.publisher_id, share, EarningSource.SITE)
         db.commit()
         return True
 
@@ -216,7 +235,8 @@ def track_click(
         _active_campaigns()
         .with_only_columns(
             Campaign.id, Campaign.user_id, Campaign.title, Campaign.target_url,
-            Placement.price_per_click.label("price"),
+            Placement.price_per_click.label("price"), Placement.site_id,
+            Site.user_id.label("publisher_id"), Site.revenue_share,
         )
         .where(Campaign.id == campaign_id)
     ).one_or_none()

@@ -130,6 +130,18 @@ class Settings(BaseSettings):
     # Повторный клик с того же IP по той же кампании в этом окне не оплачивается
     click_dedup_minutes: int = Field(default=10, gt=0)
 
+    # Партнёрская программа (app/services/partners.py).
+    # Доля владельца сайта от цены клика; у отдельного сайта администратор может задать свою
+    publisher_revenue_share: Decimal = Field(default=Decimal("0.60"), ge=0, le=1)
+    # Сколько дней заработок «созревает», прежде чем его можно вывести: время найти накрутку
+    earnings_hold_days: int = Field(default=14, ge=1, le=180)
+    # Минимальная сумма заявки на выплату (в валюте баланса). Перевод на рекламный баланс — без минимума
+    payout_min_amount: Decimal = Field(default=Decimal("20"), gt=0)
+    # Цена клика для новой площадки партнёра (администратор может изменить у площадки)
+    partner_default_cpc: Decimal = Field(default=Decimal("0.10"), ge=0)
+    # Сколько площадок (мест под баннер) партнёр может создать на одном сайте
+    partner_max_placements_per_site: int = Field(default=20, ge=1)
+
     # С каких доменов фронтенд (React/Vue/Next.js) может обращаться к API из браузера,
     # через запятую. По умолчанию — локальные серверы разработки. На сервере укажите домен
     # фронтенда: CORS_ORIGINS=https://app.example.com. "*" — с любых (не рекомендуется).
