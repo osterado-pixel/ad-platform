@@ -755,17 +755,84 @@ async function walletView() {
   }, amount, depositBtn) : h("p", { class: "muted small" },
     "Пополнение баланса выполняет администратор платформы.");
 
+  const payCfg = await api("GET", "/payments/config").catch(() => ({ enabled: false }));
   return h("div", {},
     h("h1", {}, "Кошелёк"),
     h("div", { class: "grid" }, statCard("Баланс", money(state.me.balance)),
       // Резерв под AI-генерации, которые ещё выполняются: после них вернётся или спишется по факту
       Number(state.me.held_balance) > 0 ? statCard("Заморожено", money(state.me.held_balance)) : null),
-    h("div", { class: "card" }, h("h2", {}, "Пополнение"), depositForm),
+    h("div", { class: "card stack" }, h("h2", {}, "Пополнение"),
+      payCfg.enabled ? topUpForm(payCfg) : null,
+      // Админ пополняет вручную всегда; рекламодатель — подсказка, только если оплаты картой нет
+      isAdmin || !payCfg.enabled ? depositForm : null),
+    await plansCard(payCfg),
     h("div", { class: "card" }, h("h2", {}, "История операций"),
       count ? h("div", { class: "table-wrap" }, h("table", {},
         h("thead", {}, h("tr", {}, h("th", {}, "Когда"), h("th", {}, "Тип"), h("th", {}, "Описание"), h("th", { class: "num" }, "Сумма"))),
         rows)) : h("div", { class: "empty" }, "Операций пока не было"),
       h("div", { style: "margin-top:10px" }, more)));
+}
+
+// ---------- Оплата картой и тарифы ----------
+// Перейти на страницу оплаты: только свой домен или https (адрес приходит от нашего сервера,
+// но ссылку javascript:… или http-страницу не открываем ни при каких условиях)
+function goToPayment(url) {
+  if (typeof url === "string" && (/^\/(?!\/)/.test(url) || /^https:\/\//.test(url))) {
+    location.href = url;
+    return true;
+  }
+  toast("Платёжная система вернула некорректную ссылку", "error");
+  return false;
+}
+
+function topUpForm(cfg) {
+  const amount = h("input", { type: "number", id: "pay-amount", min: String(cfg.min_amount), max: String(cfg.max_amount),
+    step: "0.01", placeholder: "Сумма", required: true, style: "width:140px" });
+  const pay = h("button", { class: "primary", type: "submit" }, "Пополнить картой");
+  return h("div", { class: "stack" },
+    cfg.test_mode ? h("div", { class: "notice warn" }, "Тестовый режим оплаты: деньги ненастоящие.") : null,
+    h("form", {
+      class: "row",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const p = await run(pay, () => api("POST", "/payments/top-up", { amount: amount.value }));
+        if (p) goToPayment(p.confirmation_url);
+      },
+    }, amount, h("span", { class: "muted small" }, cfg.currency), pay),
+    h("div", { class: "small muted" },
+      `От ${money(cfg.min_amount)} до ${money(cfg.max_amount)}. Деньги зачислятся после подтверждения оплаты банком.`));
+}
+
+async function plansCard(payCfg) {
+  const [plans, my] = await Promise.all([
+    api("GET", "/plans").catch(() => []),
+    api("GET", "/plans/my").catch(() => ({ subscription: null })),
+  ]);
+  if (!plans.length && !my.subscription) return null;  // тарифов нет — блока нет
+  const current = my.subscription
+    ? h("div", { class: "notice ok" }, "Ваш тариф: ", h("b", {}, my.plan ? my.plan.name : "—"),
+      my.subscription.ends_at ? ` · действует до ${dateTime(my.subscription.ends_at)}` : " · бессрочно")
+    : h("div", { class: "muted small" }, "Тариф не подключён.");
+  const list = plans.map((p) => {
+    const buy = h("button", { class: Number(p.price) > 0 ? "primary small" : "small" },
+      Number(p.price) > 0 ? `Купить за ${money(p.price)}` : "Подключить бесплатно");
+    buy.disabled = Number(p.price) > 0 && !payCfg.enabled;  // платный — только при подключённой оплате
+    buy.onclick = async () => {
+      const r = await run(buy, () => api("POST", `/plans/${encodeURIComponent(p.code)}/buy`));
+      if (!r) return;
+      if (r.payment) goToPayment(r.payment.confirmation_url);
+      else { toast("Тариф подключён"); render(); }
+    };
+    return h("div", { class: "card stack plan-item" },
+      h("div", { class: "row between" }, h("b", {}, p.name),
+        h("span", { class: "muted small" }, p.period_days ? `${p.period_days} дн.` : "разово")),
+      p.description ? h("div", { class: "small" }, p.description) : null,
+      h("div", { class: "row" }, buy));
+  });
+  return h("div", { class: "card stack", id: "plans-card" }, h("h2", {}, "Тариф"), current,
+    list.length ? h("div", { class: "grid" }, list) : null,
+    plans.some((p) => Number(p.price) > 0) && !payCfg.enabled
+      ? h("div", { class: "small muted" }, "Оплата картой пока не подключена — платные тарифы недоступны.") : null);
 }
 
 // ---------- Админ: модерация ----------

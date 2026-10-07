@@ -483,3 +483,91 @@ class BotMe(BaseModel):
     email: str
     balance: Money
     held_balance: Money
+
+
+# --- Платежи и тарифы ---
+class PaymentsConfig(BaseModel):
+    enabled: bool
+    provider: str | None = None
+    test_mode: bool = Field(description="Тестовый провайдер: деньги ненастоящие")
+    currency: str
+    min_amount: Money
+    max_amount: Money
+
+
+class TopUpRequest(BaseModel):
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2, description="Сумма пополнения")
+
+
+class PaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    purpose: Literal["top_up", "plan"]
+    status: Literal["pending", "succeeded", "canceled", "failed", "refunded"]
+    amount: Money
+    currency: str
+    plan_id: int | None = None
+    confirmation_url: str | None = Field(default=None, description="Куда отправить пользователя для оплаты")
+    created_at: UtcDatetime
+    paid_at: UtcDatetime | None = None
+
+
+PlanCode = Annotated[str, Field(pattern=r"^[a-z0-9_-]{2,50}$", description="Латиница, цифры, _ и -")]
+
+
+class PlanResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    description: str | None = None
+    price: Money
+    period_days: int | None = Field(default=None, description="Срок в днях; null — разовая покупка")
+    features: dict = Field(default_factory=dict)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class PlanCreate(BaseModel):
+    code: PlanCode
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    period_days: int | None = Field(default=None, ge=1, le=3660)
+    features: dict = Field(default_factory=dict)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class PlanUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    period_days: int | None = Field(default=None, ge=1, le=3660)
+    features: dict | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class SubscriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    plan_id: int
+    status: Literal["active", "canceled", "expired"]
+    starts_at: UtcDatetime
+    ends_at: UtcDatetime | None = None
+    features: dict = Field(default_factory=dict)
+
+
+class MyPlan(BaseModel):
+    subscription: SubscriptionResponse | None = None
+    plan: PlanResponse | None = None
+    entitlements: dict = Field(description="Возможности сейчас: {'plan': код или null, ...}")
+
+
+class PlanPurchaseResponse(BaseModel):
+    payment: PaymentResponse | None = Field(default=None, description="Платный тариф — перейти по confirmation_url")
+    subscription: SubscriptionResponse | None = Field(default=None, description="Бесплатный — активирован сразу")

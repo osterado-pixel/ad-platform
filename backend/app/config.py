@@ -107,6 +107,18 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""
     telegram_link_code_minutes: int = Field(default=10, ge=1, le=60)
 
+    # Приём платежей (app/payments). Пусто — выключен: баланс пополняет администратор.
+    # "test" — тестовый провайдер для разработки (страница «Оплатить/Отменить», деньги НЕнастоящие).
+    # Настоящие провайдеры (yookassa, stripe…) добавляются классом в app/payments/ — см. README
+    payments_provider: str = ""
+    payments_currency: str = Field(default="RUB", min_length=3, max_length=3)
+    payments_min_amount: Decimal = Field(default=Decimal("1"), gt=0)
+    payments_max_amount: Decimal = Field(default=Decimal("100000"), gt=0)
+    # Секрет подписи уведомлений тестового провайдера (пусто — SECRET_KEY)
+    payments_test_secret: str = ""
+    # Адрес сайта для возврата после оплаты (https://ads.example.com); пусто — адрес из запроса
+    public_url: str = ""
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 

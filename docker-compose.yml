@@ -71,6 +71,13 @@ services:
       # Telegram-бот: общий секрет бота и API (≥ 32 символов) и имя бота для ссылки привязки
       TELEGRAM_BOT_SECRET: ${TELEGRAM_BOT_SECRET:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      # Приём платежей: пусто — выключен (пополняет администратор); test — тестовый, деньги ненастоящие
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-}
+      PAYMENTS_CURRENCY: ${PAYMENTS_CURRENCY:-RUB}
+      PAYMENTS_MIN_AMOUNT: ${PAYMENTS_MIN_AMOUNT:-1}
+      PAYMENTS_MAX_AMOUNT: ${PAYMENTS_MAX_AMOUNT:-100000}
+      PAYMENTS_TEST_SECRET: ${PAYMENTS_TEST_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
     ports:

@@ -41,6 +41,7 @@ def server():
            "DATABASE_URL": db_url,
            "SECRET_KEY": "e2e-secret-key-0123456789abcdefghijklmnopq",
            "BCRYPT_ROUNDS": "4",
+           "PAYMENTS_PROVIDER": "test",  # оплата картой — тестовым провайдером (деньги ненастоящие)
            "ANTHROPIC_API_KEY": "", "GEMINI_API_KEY": "", "OPENAI_API_KEY": ""}  # без обращений к внешним API
     SERVER_DB["url"] = db_url
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env,
@@ -453,4 +454,49 @@ def test_telegram_card_in_profile(server, browser):
     page2.goto(server + "/app#/profile")
     page2.wait_for_selector("h1:has-text('Профиль')")
     assert page2.locator("#telegram-card").count() == 0
+    assert errors == [], errors
+
+
+def test_top_up_by_card_and_plan(server, browser):
+    """Пополнение картой (тестовый провайдер) и покупка тарифа — на настоящем бэкенде."""
+    import httpx2 as httpx
+    errors = []
+    _advertiser(server, "pay@e2e.ru")
+    admin_token = httpx.post(server + "/api/v1/auth/login",
+                             data={"username": "admin@e2e.ru", "password": PASSWORD}).json()["access_token"]
+    r = httpx.post(server + "/api/v1/plans", headers={"Authorization": f"Bearer {admin_token}"},
+                   json={"code": "pro_e2e", "name": "Pro E2E", "price": "19", "period_days": 30,
+                         "description": "Для проверки", "features": {"ai_generations": 300}})
+    assert r.status_code == 201, r.text
+
+    page = new_page(browser, errors)
+    login(page, server, "pay@e2e.ru")
+    page.click("nav a:has-text('Кошелёк')")
+    playwright_api.expect(page.locator(".notice.warn")).to_contain_text("деньги ненастоящие")
+    page.fill("#pay-amount", "75")
+    page.click("button:has-text('Пополнить картой')")
+    page.wait_for_selector("h1:has-text('Тестовая оплата')")       # «страница банка»
+    playwright_api.expect(page.locator("body")).to_contain_text("75.00 RUB")
+    page.click("button:has-text('Оплатить')")
+    page.wait_for_selector("h1:has-text('Кошелёк')")                # возврат в кошелёк
+    playwright_api.expect(page.locator("#balance")).to_have_text("75,00")
+    playwright_api.expect(page.locator("td:has-text('Оплата картой')")).to_be_visible()
+
+    # Тариф: покупка через ту же оплату
+    card = page.locator("#plans-card")
+    playwright_api.expect(card).to_contain_text("Тариф не подключён")
+    card.locator("button:has-text('Купить за 19,00')").click()
+    page.wait_for_selector("h1:has-text('Тестовая оплата')")
+    page.click("button:has-text('Оплатить')")
+    page.wait_for_selector("h1:has-text('Кошелёк')")
+    playwright_api.expect(page.locator("#plans-card .notice.ok")).to_contain_text("Pro E2E")
+    playwright_api.expect(page.locator("#balance")).to_have_text("75,00")  # тариф оплачен картой, не с баланса
+
+    # Отмена оплаты — деньги не зачисляются
+    page.fill("#pay-amount", "10")
+    page.click("button:has-text('Пополнить картой')")
+    page.wait_for_selector("h1:has-text('Тестовая оплата')")
+    page.click("button:has-text('Отменить')")
+    page.wait_for_selector("h1:has-text('Кошелёк')")
+    playwright_api.expect(page.locator("#balance")).to_have_text("75,00")
     assert errors == [], errors

@@ -16,7 +16,7 @@ from app.database import get_db
 from app.middleware import JsonCharsetMiddleware, PublicCorsMiddleware, SecurityHeadersMiddleware
 from app.monitoring import init_sentry
 from app.pagination import PAGINATION_HEADERS
-from app.routers import ads, ai, auth, campaigns, placements, stats, telegram, users, wallet
+from app.routers import ads, ai, auth, campaigns, payments, placements, plans, stats, telegram, users, wallet
 
 # Схема БД управляется миграциями Alembic: `alembic upgrade head` из папки backend/
 
@@ -29,6 +29,8 @@ init_sentry("api")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from app.services.ai_cleanup import cleanup_stuck_ai_tasks, schedule_task_cleanup
+    from app import payments
+    payments.startup_check(logger)
     # 1. Сразу при запуске — задачи, прерванные прошлым перезапуском (резерв денег возвращается).
     #    Ошибка БД (например, миграции ещё не применены) не мешает серверу запуститься
     await cleanup_stuck_ai_tasks(timeout_minutes=settings.ai_task_timeout_minutes)
@@ -82,6 +84,8 @@ app.include_router(stats.analytics_router)
 app.include_router(ai.router)
 app.include_router(telegram.router)
 app.include_router(telegram.bot_router)
+app.include_router(payments.router)
+app.include_router(plans.router)
 
 @app.get("/")
 def read_root():

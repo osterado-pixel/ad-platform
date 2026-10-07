@@ -282,6 +282,95 @@ class TelegramLinkCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Plan(Base):
+    """Тариф: цена, срок и набор возможностей. Что даёт каждая возможность — app/services/entitlements.py."""
+    __tablename__ = "plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True)  # starter, pro — в ссылках и API
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(String(500))
+    price: Mapped[Decimal] = mapped_column(Money)
+    # Срок действия в днях; None — разовая покупка (например, пакет)
+    period_days: Mapped[int | None] = mapped_column()
+    # Возможности тарифа: {"ai_generations": 300, ...} — ключи и их смысл задаёт entitlements.py
+    features: Mapped[dict] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(default=True, server_default="1")
+    sort_order: Mapped[int] = mapped_column(default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (CheckConstraint("price >= 0", name="ck_plans_price_nonneg"),)
+
+
+class SubscriptionStatus(str, enum.Enum):
+    ACTIVE = "active"
+    CANCELED = "canceled"   # отменена до окончания (возможности пропадают сразу)
+    EXPIRED = "expired"     # закончился срок (выставляется при проверке — см. entitlements.py)
+
+
+class Subscription(Base):
+    """Тариф пользователя на срок. Активная — status=active и ends_at в будущем (или без срока)."""
+    __tablename__ = "subscriptions"
+    __table_args__ = (Index("ix_subscriptions_user_id_status", "user_id", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id", ondelete="RESTRICT"))
+    status: Mapped[SubscriptionStatus] = mapped_column(
+        _enum(SubscriptionStatus, "subscription_status"), default=SubscriptionStatus.ACTIVE,
+        server_default=SubscriptionStatus.ACTIVE.value)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Снимок возможностей на момент покупки: правка тарифа не меняет уже оплаченное
+    features: Mapped[dict] = mapped_column(JSON, default=dict)
+    payment_id: Mapped[str | None] = mapped_column(ForeignKey("payments.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PaymentPurpose(str, enum.Enum):
+    TOP_UP = "top_up"   # пополнение баланса
+    PLAN = "plan"       # покупка тарифа
+
+
+class PaymentStatus(str, enum.Enum):
+    PENDING = "pending"        # создан, ждём оплату
+    SUCCEEDED = "succeeded"    # оплачен — деньги зачислены / тариф активирован
+    CANCELED = "canceled"      # пользователь отменил или истёк срок оплаты
+    FAILED = "failed"          # отказ банка
+    REFUNDED = "refunded"      # возврат денег плательщику
+
+
+class Payment(Base):
+    """Платёж через платёжную систему (app/payments). Статус меняют только уведомления провайдера."""
+    __tablename__ = "payments"
+    __table_args__ = (
+        # Один платёж провайдера — одна запись: повторное уведомление не создаст дубль
+        UniqueConstraint("provider", "provider_payment_id", name="uq_payments_provider_id"),
+        Index("ix_payments_user_id_created_at", "user_id", "created_at"),
+        CheckConstraint("amount > 0", name="ck_payments_amount_positive"),
+    )
+
+    # UUID строкой: номер платежа не угадать перебором
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))  # финансовая история
+    provider: Mapped[str] = mapped_column(String(30))
+    provider_payment_id: Mapped[str | None] = mapped_column(String(100))
+    purpose: Mapped[PaymentPurpose] = mapped_column(_enum(PaymentPurpose, "payment_purpose"))
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", ondelete="RESTRICT"))
+    amount: Mapped[Decimal] = mapped_column(Money)
+    currency: Mapped[str] = mapped_column(String(3))
+    status: Mapped[PaymentStatus] = mapped_column(
+        _enum(PaymentStatus, "payment_status"), default=PaymentStatus.PENDING,
+        server_default=PaymentStatus.PENDING.value)
+    confirmation_url: Mapped[str | None] = mapped_column(String(2048))
+    # Операция пополнения в журнале денег (для top_up после оплаты)
+    transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class AILog(Base):
     """Журнал AI-запросов: модель, токены, себестоимость и списанная сумма."""
     __tablename__ = "ai_logs"
