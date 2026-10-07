@@ -26,7 +26,7 @@ from app.config import settings
 from app.database import write_lock
 from app.ledger import add_transaction
 from app.models import (
-    EarningSource, PartnerEarning, PartnerTransaction, PartnerTxType, Payout, PayoutStatus,
+    EarningSource, PartnerEarning, PartnerTransaction, PartnerTxType, Payout, PayoutStatus, Site,
     SiteDailyStat, TransactionType, User,
 )
 from app.stats import utc_today
@@ -139,7 +139,9 @@ def mature(db: Session, user_id: int | None = None) -> Decimal:
     UPDATE ... RETURNING помечает строки и возвращает их суммы одной командой: два параллельных
     вызова (несколько процессов сервера) не зачислят одну строку дважды.
     """
-    where = [PartnerEarning.matured.is_(False), PartnerEarning.day <= maturity_cutoff()]
+    where = [PartnerEarning.matured.is_(False), PartnerEarning.day <= maturity_cutoff(),
+             # Сайт владельца приостановлен за признаки накрутки — заработок ждёт решения администратора
+             PartnerEarning.user_id.not_in(select(Site.user_id).where(Site.fraud_hold.is_(True)))]
     if user_id is not None:
         where.append(PartnerEarning.user_id == user_id)
     with write_lock():

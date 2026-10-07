@@ -195,7 +195,8 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
         site.check_reasons = result.reasons if result else None
         site.checked_at = datetime.now(timezone.utc)
         before = site.status
-        if site.status == SiteStatus.PENDING and result is not None:  # решение админа не трогаем
+        # Решение админа и приостановку за накрутку не трогаем: снимает её только администратор
+        if site.status == SiteStatus.PENDING and not site.fraud_hold and result is not None:
             if settings.ai_auto_reject and result.verdict == "reject" and result.risk == "high":
                 site.status = SiteStatus.REJECTED
                 site.rejection_reason = (AUTO_PREFIX + ("; ".join(result.reasons) or result.summary))[:1000]

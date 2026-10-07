@@ -1279,6 +1279,7 @@ async function adminSitesView(filter = "pending") {
       : h("div", { class: "small muted", style: "margin-top:4px" }, t("sites.notChecked"));
     return h("tr", {},
       h("td", {}, h("b", {}, site.name), " ", siteBadge(site.status),
+        site.fraud_hold ? h("span", {}, " ", h("span", { class: "badge rejected", title: t("sites.fraudHoldHint") }, t("sites.fraudHold"))) : null,
         h("div", { class: "small" }, h("a", { href: site.url, target: "_blank", rel: "noopener noreferrer", class: "break" }, site.url)),
         h("div", { class: "small muted" }, site.owner_email, " · ", dateTime(site.created_at)),
         site.rejection_reason ? h("div", { class: "small", style: "color:var(--danger)" }, site.rejection_reason) : null,

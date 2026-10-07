@@ -101,7 +101,7 @@ def fraud_block_sync(session_factory: Callable[[], Session] = SessionLocal) -> N
         log.exception("Ошибка при автоматической блокировке накрутки")
         return
     if blocked:
-        log.warning("Заблокированы за накрутку сайты партнёров: %s", blocked)
+        log.warning("Приостановлены за признаки накрутки сайты партнёров: %s", blocked)
 
 
 def daily_emails_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
@@ -137,11 +137,11 @@ async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS)
         try:
             if settings.auto_purge:
                 await asyncio.to_thread(purge_sync)
-            # Созревший заработок партнёров — в «доступно к выводу» (не удаление, поэтому без AUTO_PURGE)
-            await asyncio.to_thread(mature_sync)
-            # Накрутка: явные случаи блокируются до того, как заработок созреет
+            # Накрутка — до созревания: заработок приостановленного сайта не успеет стать доступным
             if settings.fraud_auto_block:
                 await asyncio.to_thread(fraud_block_sync)
+            # Созревший заработок партнёров — в «доступно к выводу» (не удаление, поэтому без AUTO_PURGE)
+            await asyncio.to_thread(mature_sync)
             await asyncio.to_thread(daily_emails_sync)
             # Сайты на проверке, которые не открылись или не проверены, — проверить снова
             if settings.site_auto_check:

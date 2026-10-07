@@ -167,6 +167,12 @@ class Site(Base):
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+    # Приостановлен автопилотом за признаки накрутки: показа нет, заработок владельца не созревает,
+    # пока администратор не решит (одобрить — снять подозрение, заблокировать — с аннулированием или без)
+    fraud_hold: Mapped[bool] = mapped_column(default=False, server_default="0")
+    # Администратор одобрил сайт после приостановки: автопилот не трогает его FRAUD_REVIEW_DAYS дней
+    # (статистика прошлых дней та же — иначе он приостановил бы сайт снова на следующий день)
+    fraud_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     owner: Mapped["User"] = relationship()
     placements: Mapped[list["Placement"]] = relationship(back_populates="site")
@@ -345,6 +351,8 @@ class Click(Base):
         UniqueConstraint("campaign_id", "ip_hash", "time_window", name="uq_clicks_dedup"),
         # Отчёт о накрутке: клики площадки за последние дни
         Index("ix_clicks_placement_id_time_window", "placement_id", "time_window"),
+        # Лимит оплачиваемых кликов с одного адреса на сайт в сутки (app/routers/ads.py)
+        Index("ix_clicks_ip_hash_time_window", "ip_hash", "time_window"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

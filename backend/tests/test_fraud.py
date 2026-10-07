@@ -146,17 +146,54 @@ def test_click_remembers_placement(client, db):
     assert db.scalar(select(Click.placement_id).where(Click.campaign_id == c.id)) == pl.id
 
 
-# ---------- Автопилот: явная накрутка блокируется сама ----------
-def test_auto_block_two_flags(db, world):
+# ---------- Автопилот: явная накрутка — приостановка до решения администратора ----------
+def test_auto_suspend_two_flags(db, world):
     pub, honest, bad, good = world
     assert fraud.auto_block(db) == [bad.id]
     db.refresh(bad)
-    assert bad.status == SiteStatus.BLOCKED
-    assert bad.rejection_reason == ("Автоматическая блокировка, признаки накрутки: "
+    assert (bad.status, bad.fraud_hold) == (SiteStatus.PENDING, True)  # показа нет
+    assert bad.rejection_reason == ("Автоматическая приостановка, признаки накрутки: "
                                     "слишком высокий CTR; клики с малого числа адресов")
-    assert partners.pending_amount(db, pub.id) == Decimal("1")      # остался только реферальный
-    assert partners.pending_amount(db, honest.id) == Decimal("6")
-    assert fraud.auto_block(db) == []                                # уже заблокирован — повторно не трогаем
+    # Ничего не аннулировано: признаки мог подстроить и недоброжелатель
+    assert partners.pending_amount(db, pub.id) == Decimal("19")
+    assert fraud.auto_block(db) == []                                # уже приостановлен
+
+
+def test_suspended_owner_earnings_frozen(db, world, monkeypatch):
+    pub, honest, _, _ = world
+    fraud.auto_block(db)
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + settings.earnings_hold_days * 24 * 3600)
+    partners.mature(db)
+    db.refresh(pub)
+    db.refresh(honest)
+    assert pub.earnings_balance == 0                    # заморожено до решения
+    assert honest.earnings_balance == Decimal("6.00")   # других партнёров не касается
+
+
+def test_admin_clears_suspension_and_autopilot_respects_it(client, db, auth_headers, world, monkeypatch):
+    pub, _, bad, _ = world
+    fraud.auto_block(db)
+    r = client.post(f"{A}/sites/{bad.id}/moderate", json={"status": "approved"}, headers=auth_headers)
+    assert (r.json()["status"], r.json()["fraud_hold"]) == ("approved", False)
+    db.refresh(bad)
+    assert bad.fraud_reviewed_at is not None
+    assert fraud.auto_block(db) == []   # та же статистика прошлых дней — но решение администратора важнее
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + settings.earnings_hold_days * 24 * 3600)
+    partners.mature(db, pub.id)
+    db.refresh(pub)
+    assert pub.earnings_balance == Decimal("19.00")  # заморозка снята — заработок созрел
+
+
+def test_admin_blocks_suspended_with_forfeit(client, db, auth_headers, world):
+    pub, _, bad, _ = world
+    fraud.auto_block(db)
+    client.post(f"{A}/sites/{bad.id}/moderate", headers=auth_headers,
+                json={"status": "blocked", "reason": "Накрутка", "forfeit_pending": True})
+    db.refresh(bad)
+    assert (bad.status, bad.fraud_hold) == (SiteStatus.BLOCKED, False)
+    assert partners.pending_amount(db, pub.id) == Decimal("1")  # аннулирован заработок с сайтов
 
 
 def test_auto_block_ignores_single_flag(db, world):
@@ -169,19 +206,33 @@ def test_auto_block_ignores_single_flag(db, world):
     assert bad.status == SiteStatus.APPROVED
 
 
-def test_auto_block_reason_translated(client, db, world):
+def test_auto_suspend_reason_translated(client, db, world):
     pub, _, bad, _ = world
     fraud.auto_block(db)
     h = {"Authorization": f"Bearer {create_access_token(pub.id)}", "Accept-Language": "en"}
     site = client.get("/api/v1/partner/sites", headers=h).json()[0]
-    assert site["rejection_reason"] == ("Blocked automatically, signs of click fraud: "
+    assert site["rejection_reason"] == ("Suspended automatically, signs of click fraud: "
                                         "CTR too high; clicks from few addresses")
 
 
-def test_daily_job_runs_auto_block(db, world, monkeypatch):
+def test_daily_job_runs_auto_suspend(db, world):
     from app import maintenance
     from app.database import background_session_factory
     _, _, bad, _ = world
     maintenance.fraud_block_sync(background_session_factory(db))
     db.expire_all()
-    assert db.get(Site, bad.id).status == SiteStatus.BLOCKED
+    assert db.get(Site, bad.id).fraud_hold is True
+
+
+def test_content_check_does_not_lift_suspension(db, world, monkeypatch):
+    from app import ai
+    from app.database import background_session_factory
+    from app.services import site_check
+    _, _, bad, _ = world
+    fraud.auto_block(db)
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    monkeypatch.setattr(site_check, "fetch_page", lambda url, domain, transport=None: site_check.Page(url, "T", "x"))
+    monkeypatch.setattr(ai, "moderate_site",
+                        lambda *a: ai.AIModerationResult(verdict="approve", risk="low", reasons=[], summary=""))
+    site = site_check.check_site(background_session_factory(db), bad.id)
+    assert (site.status, site.fraud_hold) == (SiteStatus.PENDING, True)

@@ -428,3 +428,26 @@ def test_platform_placements_work_anywhere(client, db):
     assert client.get(SERVE, params={"placement_code": "header"}).status_code == 200
     assert client.get(SERVE, params={"placement_code": "header"},
                       headers={"Origin": "https://anything.example.org"}).status_code == 200
+
+
+def test_click_limit_per_ip_per_site(client, db, auth_headers, publisher, advertiser, monkeypatch):
+    """С одного адреса — не больше CLICK_IP_SITE_DAILY_LIMIT оплачиваемых кликов на сайт в сутки,
+    даже по разным кампаниям (повтор по одной кампании и так не оплачивается 10 минут)."""
+    monkeypatch.setattr(settings, "click_ip_site_daily_limit", 2)
+    _, pub_h = publisher
+    adv, _ = advertiser
+    site = _site(client, pub_h)
+    _approve(client, auth_headers, site["id"])
+    pl = _placement(client, pub_h, site["id"])
+    campaigns = []
+    for i in range(3):
+        c = Campaign(user_id=adv.id, placement_id=pl["id"], title=f"A{i}", target_url="https://shop.example.com",
+                     status=CampaignStatus.ACTIVE)
+        db.add(c)
+        db.commit()
+        campaigns.append(c)
+    for c in campaigns:
+        _click(client, c.id)
+    db.refresh(adv)
+    assert adv.balance == Decimal("100.00") - 2 * Decimal(str(settings.partner_default_cpc))
+    assert db.scalar(select(SiteDailyStat.clicks)) == 2

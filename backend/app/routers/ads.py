@@ -237,6 +237,16 @@ def _charge_click(db: Session, request: Request, campaign: Charge) -> bool:
             Click.time_window > minute - settings.click_dedup_minutes,
         ).limit(1)
     )
+    # 1б. Сайт партнёра: с одного адреса — не больше CLICK_IP_SITE_DAILY_LIMIT оплачиваемых кликов
+    #     в сутки по всем кампаниям (ограничивает и накрутку, и расходы рекламодателей при атаке)
+    if recent is None and campaign.site_id is not None:
+        clicks_today = db.scalar(
+            select(func.count()).select_from(Click).join(Placement, Placement.id == Click.placement_id)
+            .where(Click.ip_hash == ip_hash, Placement.site_id == campaign.site_id,
+                   Click.time_window > minute - 24 * 60)
+        )
+        if clicks_today >= settings.click_ip_site_daily_limit:
+            recent = True
     db.rollback()  # закрываем чтение: транзакция записи должна начаться с записи
     if recent is not None:
         return False

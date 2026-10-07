@@ -3,7 +3,7 @@
 Деньги — в app/services/partners.py; здесь только проверки доступа и ответы API.
 """
 import secrets
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from urllib.parse import urlsplit
 
@@ -233,6 +233,11 @@ def moderate_site(site_id: int, data: SiteModerate, db: Session = Depends(get_db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сайт не найден")
     changed = site.status != data.status
     with write_lock():
+        if site.fraud_hold:
+            # Администратор решил: приостановка снята; одобрил — автопилот не тронет сайт FRAUD_REVIEW_DAYS дней
+            site.fraud_hold = False
+            if data.status == SiteStatus.APPROVED:
+                site.fraud_reviewed_at = datetime.now(timezone.utc)
         site.status = data.status
         site.rejection_reason = data.reason
         if data.reset_share:

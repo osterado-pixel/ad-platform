@@ -38,6 +38,7 @@ x-app-env: &app-env
   # Документация API на боевом сервере выключена (полный список адресов раскрывать незачем)
   API_DOCS: ${API_DOCS:-false}
   FRAUD_AUTO_BLOCK: ${FRAUD_AUTO_BLOCK:-true}
+  CLICK_IP_SITE_DAILY_LIMIT: ${CLICK_IP_SITE_DAILY_LIMIT:-5}
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_USER: ${SMTP_USER:-}

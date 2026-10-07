@@ -7,12 +7,12 @@
 - clicks_over_impressions — кликов больше, чем показов: ссылку клика открывают напрямую, без баннера.
 
 Пока заработок созревает (EARNINGS_HOLD_DAYS), его можно аннулировать — forfeit_pending().
-Автопилот (FRAUD_AUTO_BLOCK, раз в сутки — auto_block): одобренный сайт с двумя и более признаками сразу
-блокируется, созревающий заработок владельца аннулируется. Один признак — только в отчёте, решает человек:
-по отдельности каждый бывает и у честного сайта (маленький сайт с одним активным читателем).
+Автопилот (FRAUD_AUTO_BLOCK, раз в сутки — auto_block): одобренный сайт с двумя и более признаками
+приостанавливается, заработок владельца замораживается до решения администратора. Один признак — только
+в отчёте: по отдельности каждый бывает и у честного сайта (маленький сайт с одним активным читателем).
 """
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
@@ -29,6 +29,7 @@ FEW_IPS_RATIO = 0.5          # разных адресов меньше поло
 FEW_IPS_MIN_CLICKS = 20
 AUTO_BLOCK_MIN_FLAGS = 2
 AUTO_BLOCK_DAYS = 14
+FRAUD_REVIEW_DAYS = 14  # столько дней автопилот не трогает сайт, одобренный администратором после приостановки
 # Признак → причина для партнёра (переводится по каталогу app/messages.py)
 FLAG_REASONS = {
     "high_ctr": "слишком высокий CTR",
@@ -102,19 +103,26 @@ def forfeit_pending(db: Session, user_id: int) -> Decimal:
 
 
 def auto_block(db: Session, days: int = AUTO_BLOCK_DAYS) -> list[int]:
-    """Блокирует одобренные сайты с AUTO_BLOCK_MIN_FLAGS+ признаками и аннулирует созревающий заработок
-    их владельцев. Возвращает id заблокированных сайтов."""
-    blocked = []
+    """Приостанавливает одобренные сайты с AUTO_BLOCK_MIN_FLAGS+ признаками: показ останавливается
+    (статус «на проверке»), заработок владельца замораживается (fraud_hold) до решения администратора.
+    Не блокирует и не аннулирует сам: клики никто не подписывает, и признаки может подстроить
+    недоброжелатель — тогда честный партнёр потерял бы деньги. Сайт, который администратор одобрил
+    после приостановки, не трогается FRAUD_REVIEW_DAYS дней. Возвращает id приостановленных сайтов."""
+    reviewed_since = datetime.now(timezone.utc) - timedelta(days=FRAUD_REVIEW_DAYS)
+    held = []
     for row in fraud_report(db, days):
         if row["status"] != SiteStatus.APPROVED or len(row["flags"]) < AUTO_BLOCK_MIN_FLAGS:
             continue
         reasons = "; ".join(FLAG_REASONS[f] for f in row["flags"])
         with write_lock():
             site = db.get(Site, row["site_id"])
-            site.status = SiteStatus.BLOCKED
-            site.rejection_reason = f"Автоматическая блокировка, признаки накрутки: {reasons}"
+            reviewed = site.fraud_reviewed_at
+            if reviewed is not None and (reviewed if reviewed.tzinfo else reviewed.replace(tzinfo=timezone.utc)) >= reviewed_since:
+                db.rollback()
+                continue
+            site.status, site.fraud_hold = SiteStatus.PENDING, True
+            site.rejection_reason = f"Автоматическая приостановка, признаки накрутки: {reasons}"
             db.commit()
         notify.site_decided(site, site.owner)
-        forfeit_pending(db, row["user_id"])
-        blocked.append(row["site_id"])
-    return blocked
+        held.append(row["site_id"])
+    return held

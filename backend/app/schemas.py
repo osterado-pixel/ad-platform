@@ -631,6 +631,7 @@ class SiteAdminResponse(SiteResponse):
     user_id: int
     owner_email: str
     custom_share: bool = Field(description="У сайта своя доля, а не общая из настроек")
+    fraud_hold: bool = Field(default=False, description="Приостановлен автопилотом за признаки накрутки")
     # Автоматическая проверка — подсказка администратору
     check_verdict: Literal["approve", "review", "reject", "unreachable", "reachable", "error"] | None = None
     check_summary: LocalizedText | None = None

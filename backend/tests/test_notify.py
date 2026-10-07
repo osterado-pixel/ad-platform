@@ -96,8 +96,8 @@ def test_auto_block_notifies(db, mails):
     db.commit()
     assert fraud.auto_block(db) == [site.id]
     [(to, subject, body)] = mails
-    assert (to, subject) == ("pub@example.com", "Site b.example.com blocked")
-    assert "Blocked automatically, signs of click fraud" in body
+    assert (to, subject) == ("pub@example.com", "Site b.example.com suspended for review")
+    assert "Suspended automatically, signs of click fraud" in body and "resume after the review" in body
 
 
 def test_payout_processed(client, db, auth_headers, mails):

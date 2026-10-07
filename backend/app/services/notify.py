@@ -68,6 +68,9 @@ def site_decided(site: Site, owner: User) -> None:
              "Сайт принят в рекламную сеть: на ваших площадках показывается реклама.", path="/partner")
     elif site.status == SiteStatus.REJECTED:
         send(owner, f"Сайт {site.domain} отклонён", f"Причина: {site.rejection_reason}", path="/partner")
+    elif site.status == SiteStatus.PENDING and site.fraud_hold:
+        send(owner, f"Сайт {site.domain} приостановлен для проверки", f"Причина: {site.rejection_reason}",
+             "Показ рекламы и вывод заработка возобновятся после проверки.", path="/partner")
     elif site.status == SiteStatus.BLOCKED:
         send(owner, f"Сайт {site.domain} заблокирован", f"Причина: {site.rejection_reason}", path="/partner")
 
