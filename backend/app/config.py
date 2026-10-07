@@ -64,9 +64,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     ai_model: str = "claude-opus-5-5"
     ai_timeout_seconds: float = Field(default=30, gt=0)
-    # Автоматически отклонять, если модель уверенно нашла нарушение (verdict=reject, risk=high).
-    # По умолчанию выключено: решение всегда за модератором, модель лишь подсказывает
-    ai_auto_reject: bool = False
+    # Автопилот модерации (нужен ANTHROPIC_API_KEY). Модель уверенно нашла нарушение (reject + high) —
+    # кампания отклоняется сама; уверенно одобрила (approve + low) и стоп-фразы не нашлись — запускается
+    # сама. Остальное (сомнения, сбой модели) — модератору. false — решает только человек
+    ai_auto_reject: bool = True
+    ai_auto_approve: bool = True
     # Ключ Google Gemini API (Google AI Studio, aistudio.google.com/apikey)
     gemini_api_key: str = ""
     # AI-копирайтер. gemini-1.5-flash из инструкции Google отключил; 3.8 Flash — рекомендованная сейчас

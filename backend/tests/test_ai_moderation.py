@@ -19,7 +19,9 @@ APPROVE = ai.AIModerationResult(verdict="approve", risk="low", reasons=[], summa
 def fake_ai(monkeypatch):
     """Включает AI и подменяет модель. state.result — ответ (или исключение), state.calls — вызовы."""
     monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    # Ручной режим: модель только подсказывает (автопилот — отдельные тесты в конце файла)
     monkeypatch.setattr(settings, "ai_auto_reject", False)
+    monkeypatch.setattr(settings, "ai_auto_approve", False)
 
     class State:
         result = APPROVE
@@ -186,5 +188,59 @@ def test_admin_rerun_endpoint(client, db, placement, fake_ai, monkeypatch):
 def test_ai_status_admin_only(client, db, fake_ai):
     _, h = headers_for(db, "a@mail.ru")
     r = client.get(f"{URL}/ai-status", headers=admin_headers(db))
-    assert r.json() == {"enabled": True, "model": settings.ai_model, "auto_reject": False}
+    assert r.json() == {"enabled": True, "model": settings.ai_model, "auto_reject": False, "auto_approve": False}
     assert client.get(f"{URL}/ai-status", headers=h).status_code == 403
+
+
+# ---------- Автопилот: модель уверена — решение без модератора ----------
+@pytest.fixture
+def autopilot(monkeypatch, fake_ai):
+    monkeypatch.setattr(settings, "ai_auto_approve", True)
+    monkeypatch.setattr(settings, "ai_auto_reject", True)
+    return fake_ai
+
+
+def test_autopilot_approves_confident_clean_ad(client, db, placement, autopilot):
+    _, h = headers_for(db, "a@mail.ru")
+    cid = create(client, h, placement)
+    submit(client, h, cid)
+    assert fresh(db, cid).status == CampaignStatus.ACTIVE
+
+
+@pytest.mark.parametrize("result", [
+    ai.AIModerationResult(verdict="approve", risk="medium", reasons=[], summary=""),
+    ai.AIModerationResult(verdict="review", risk="low", reasons=["Кликбейт"], summary=""),
+    ai.AIModerationResult(verdict="reject", risk="medium", reasons=["Сомнительно"], summary=""),
+])
+def test_autopilot_leaves_doubts_to_human(client, db, placement, autopilot, result):
+    _, h = headers_for(db, "a@mail.ru")
+    cid = create(client, h, placement)
+    autopilot.result = result
+    submit(client, h, cid)
+    assert fresh(db, cid).status == CampaignStatus.MODERATION
+
+
+def test_autopilot_does_not_approve_stop_words(client, db, placement, autopilot):
+    _, h = headers_for(db, "a@mail.ru")
+    r = client.post(URL, json={"placement_id": placement.id, "title": "Лучшее онлайн-казино",
+                               "target_url": "https://example.com"}, headers=h)
+    cid = r.json()["id"]
+    submit(client, h, cid)  # модель (подменённая) «одобрила», но стоп-фраза — значит, решает человек
+    assert fresh(db, cid).status == CampaignStatus.MODERATION
+
+
+def test_autopilot_model_error_goes_to_human(client, db, placement, autopilot):
+    _, h = headers_for(db, "a@mail.ru")
+    cid = create(client, h, placement)
+    autopilot.result = ai.AIUnavailable("timeout")
+    submit(client, h, cid)
+    assert fresh(db, cid).status == CampaignStatus.MODERATION
+
+
+def test_autopilot_rejects_confident_violation(client, db, placement, autopilot):
+    _, h = headers_for(db, "a@mail.ru")
+    cid = create(client, h, placement)
+    autopilot.result = REJECT
+    submit(client, h, cid)
+    c = fresh(db, cid)
+    assert c.status == CampaignStatus.REJECTED and c.rejection_reason.startswith(moderation.AUTO_REJECT_PREFIX)

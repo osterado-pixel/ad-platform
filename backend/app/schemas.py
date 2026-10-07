@@ -233,6 +233,7 @@ class AIStatus(BaseModel):
     enabled: bool
     model: str
     auto_reject: bool
+    auto_approve: bool = False
 
 
 class CampaignUpdate(BaseModel):
