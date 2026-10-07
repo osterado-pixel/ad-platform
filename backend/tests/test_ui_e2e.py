@@ -579,6 +579,11 @@ def test_partner_program_in_ui(server, browser):
     pub.fill("input[type=url]", "https://blog-e2e.example.com")
     pub.click("button:has-text('Добавить сайт')")
     pub.wait_for_selector(".badge:has-text('На проверке')")
+    # Подтверждение владения: тег для главной страницы и кнопка проверки
+    pub.wait_for_selector("pre:has-text('adplatform-site-verification')")
+    pub.wait_for_selector("button:has-text('Проверить сейчас')")
+    if os.environ.get("E2E_SCREENSHOTS"):
+        pub.screenshot(path=str(Path(os.environ["E2E_SCREENSHOTS"]) / "partner_verify.png"), full_page=True)
     pub.fill("input[placeholder='Например: баннер под статьёй']", "Под статьёй")
     pub.click("button:has-text('Создать площадку')")
     snippet = pub.locator("pre:has-text('data-placement=\"s')").first

@@ -63,7 +63,8 @@ def add_site(data: SiteCreate, background: BackgroundTasks, db: Session = Depend
                             detail=f"Можно добавить не больше {MAX_SITES_PER_USER} сайтов")
     if db.scalar(select(Site.id).where(Site.domain == domain)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SITE_TAKEN)
-    site = Site(user_id=user.id, name=data.name, url=data.url, domain=domain)
+    site = Site(user_id=user.id, name=data.name, url=data.url, domain=domain,
+                verify_token=secrets.token_hex(16))
     db.add(site)
     try:
         db.commit()
@@ -79,6 +80,21 @@ def add_site(data: SiteCreate, background: BackgroundTasks, db: Session = Depend
 @router.get("/sites", response_model=list[SiteResponse])
 def my_sites(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return db.scalars(select(Site).where(Site.user_id == user.id).order_by(Site.id)).all()
+
+
+@router.post("/sites/{site_id}/check", response_model=SiteResponse)
+def check_my_site(site_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Проверить сайт сейчас (после установки кода подтверждения) — не чаще раза в минуту."""
+    site = _my_site(db, site_id, user)
+    last = site.checked_at
+    if last is not None:
+        last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - last < timedelta(minutes=1):
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                detail="Сайт только что проверялся — повторите через минуту")
+    site_check.check_site(background_session_factory(db), site.id)
+    db.expire_all()
+    return db.get(Site, site.id)
 
 
 @router.post("/sites/{site_id}/placements", response_model=PlacementResponse,

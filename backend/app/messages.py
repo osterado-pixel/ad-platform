@@ -325,6 +325,12 @@ MESSAGES: tuple[dict[str, str], ...] = (
     _m("Оборот за вчера: {amount}", "Yesterday's turnover: {amount}", "Umsatz gestern: {amount}"),
 
     # ---------- Автоматическая проверка сайтов ----------
+    _m("Код подтверждения не найден на главной странице сайта",
+       "The verification code wasn't found on the site's home page",
+       "Der Bestätigungscode wurde auf der Startseite der Website nicht gefunden"),
+    _m("Сайт только что проверялся — повторите через минуту",
+       "The site was just checked. Try again in a minute",
+       "Die Website wurde gerade geprüft – versuchen Sie es in einer Minute erneut"),
     _m("Сайт не открылся: {reason}", "The site didn't open: {reason}", "Die Website ließ sich nicht öffnen: {reason}"),
     _m("адрес не http/https", "the address isn't http/https", "die Adresse ist nicht http/https"),
     _m("нестандартный порт", "non-standard port", "ungewöhnlicher Port"),

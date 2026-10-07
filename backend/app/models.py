@@ -167,6 +167,10 @@ class Site(Base):
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+    # Подтверждение владения: партнёр ставит на главную страницу
+    # <meta name="adplatform-site-verification" content="verify_token">; без этого автопилот сайт не одобряет
+    verify_token: Mapped[str | None] = mapped_column(String(64))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Приостановлен автопилотом за признаки накрутки: показа нет, заработок владельца не созревает,
     # пока администратор не решит (одобрить — снять подозрение, заблокировать — с аннулированием или без)
     fraud_hold: Mapped[bool] = mapped_column(default=False, server_default="0")
@@ -180,6 +184,10 @@ class Site(Base):
     @property
     def owner_email(self) -> str:
         return self.owner.email
+
+    @property
+    def verified(self) -> bool:
+        return self.verified_at is not None
 
     @property
     def custom_share(self) -> bool:

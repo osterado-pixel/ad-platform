@@ -37,6 +37,7 @@ MAX_BYTES = 512 * 1024      # главной странице хватает; б
 MAX_REDIRECTS = 5
 TEXT_LIMIT = 4000           # символов текста странице для модели — дёшево и достаточно для вывода
 USER_AGENT = "AdPlatformSiteCheck/1.0 (+site review for the ad network)"
+VERIFY_META = "adplatform-site-verification"
 AUTO_PREFIX = "Автоматическая проверка: "
 
 
@@ -49,6 +50,7 @@ class Page:
     url: str
     title: str
     text: str
+    verification: str | None = None  # content тега <meta name="adplatform-site-verification">
 
 
 def _public_ip(host: str) -> str | None:
@@ -98,8 +100,13 @@ class _TextExtractor(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.title, self.parts, self._skip, self._in_title = "", [], 0, False
+        self.verification: str | None = None
 
     def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            a = dict(attrs)
+            if (a.get("name") or "").lower() == VERIFY_META and self.verification is None:
+                self.verification = (a.get("content") or "").strip()
         if tag in self.SKIP:
             self._skip += 1
         elif tag == "title":
@@ -119,10 +126,15 @@ class _TextExtractor(HTMLParser):
 
 
 def extract_text(html: str) -> tuple[str, str]:
+    title, text, _ = _extract(html)
+    return title, text
+
+
+def _extract(html: str) -> tuple[str, str, str | None]:
     parser = _TextExtractor()
     parser.feed(html)
     text = re.sub(r"\s+", " ", " ".join(parser.parts)).strip()
-    return re.sub(r"\s+", " ", parser.title).strip()[:300], text[:TEXT_LIMIT]
+    return re.sub(r"\s+", " ", parser.title).strip()[:300], text[:TEXT_LIMIT], parser.verification
 
 
 def _on_domain(host: str, domain: str) -> bool:
@@ -157,8 +169,8 @@ def fetch_page(url: str, domain: str, transport: httpx.BaseTransport | None = No
                 raise FetchError(f"сайт не открывается ({type(e).__name__})") from e
             if not _on_domain(urlsplit(url).hostname or "", domain):
                 raise FetchError("сайт перенаправляет на другой домен")
-            title, text = extract_text(body.decode(encoding, errors="replace"))
-            return Page(url=url, title=title, text=text)
+            title, text, verification = _extract(body.decode(encoding, errors="replace"))
+            return Page(url=url, title=title, text=text, verification=verification)
     raise FetchError("слишком много перенаправлений")
 
 
@@ -170,7 +182,7 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
         site = db.get(Site, site_id)
         if site is None:
             return None
-        url, domain = site.url, site.domain
+        url, domain, token, verified = site.url, site.domain, site.verify_token, site.verified_at is not None
 
     verdict, summary, result = None, None, None
     try:
@@ -178,7 +190,12 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
     except FetchError as e:
         verdict, summary = "unreachable", f"Сайт не открылся: {e}"
     else:
-        if not ai.is_enabled():
+        just_verified = bool(token) and page.verification == token
+        if not (verified or just_verified):
+            # Без кода владельца сайт не одобряется и даже не оценивается: иначе любой мог бы добавить
+            # чужой сайт (ИИ увидел бы обычный сайт настоящего владельца) и получать доход с поддоменов
+            verdict, summary = "unverified", "Код подтверждения не найден на главной странице сайта"
+        elif not ai.is_enabled():
             verdict, summary = "reachable", page.title or url
         else:
             try:
@@ -191,6 +208,8 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
         site = db.get(Site, site_id)
         if site is None:
             return None
+        if verdict not in ("unreachable", "unverified") and site.verified_at is None:
+            site.verified_at = datetime.now(timezone.utc)  # код найден: владение подтверждено один раз
         site.check_verdict, site.check_summary = verdict, (summary or "")[:1000]
         site.check_reasons = result.reasons if result else None
         site.checked_at = datetime.now(timezone.utc)
@@ -234,7 +253,8 @@ def recheck_pending(session_factory: Callable[[], Session]) -> int:
     with session_factory() as db:
         ids = db.scalars(select(Site.id).where(
             Site.status == SiteStatus.PENDING,
-            (Site.check_verdict.is_(None)) | (Site.check_verdict.in_(("unreachable", "error", "reachable"))),
+            (Site.check_verdict.is_(None))
+            | (Site.check_verdict.in_(("unreachable", "unverified", "error", "reachable"))),
         ).limit(200)).all()
     for site_id in ids:
         try:

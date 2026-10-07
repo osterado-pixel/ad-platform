@@ -231,6 +231,8 @@ def test_content_check_does_not_lift_suspension(db, world, monkeypatch):
     _, _, bad, _ = world
     fraud.auto_block(db)
     monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    bad.verified_at = bad.created_at  # владение подтверждено ранее
+    db.commit()
     monkeypatch.setattr(site_check, "fetch_page", lambda url, domain, transport=None: site_check.Page(url, "T", "x"))
     monkeypatch.setattr(ai, "moderate_site",
                         lambda *a: ai.AIModerationResult(verdict="approve", risk="low", reasons=[], summary=""))

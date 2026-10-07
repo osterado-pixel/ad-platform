@@ -20,7 +20,9 @@ PUBLIC = {"blog.example.com": "93.184.216.34", "www.blog.example.com": "93.184.2
           "cdn.blog.example.com": "93.184.216.35", "other.example.org": "93.184.216.36",
           "metadata.attacker.example": "169.254.169.254", "local.attacker.example": "127.0.0.1",
           "lan.attacker.example": "10.0.0.5", "v6local.attacker.example": "::1"}
-PAGE = ("<html><head><title> Блог о путешествиях </title><style>.x{}</style></head>"
+TOKEN = "f00dfeedc0de"  # код подтверждения тестового сайта
+PAGE = ("<html><head><title> Блог о путешествиях </title><style>.x{}</style>"
+        f'<meta name="adplatform-site-verification" content="{TOKEN}"></head>'
         "<body><script>alert(1)</script><h1>Куда поехать</h1><p>Маршруты &amp; советы</p></body></html>")
 
 
@@ -128,7 +130,8 @@ def site(db):
     u = User(email="pub@example.com", hashed_password="x")
     db.add(u)
     db.commit()
-    s = Site(user_id=u.id, name="Блог", url="https://blog.example.com/", domain="blog.example.com")
+    s = Site(user_id=u.id, name="Блог", url="https://blog.example.com/", domain="blog.example.com",
+             verify_token=TOKEN)
     db.add(s)
     db.commit()
     return s
@@ -224,8 +227,13 @@ def test_recheck_pending_only_unfinished(db, site, fake_ai, monkeypatch):
 def test_new_site_checked_in_background(client, db, fake_ai, monkeypatch):
     monkeypatch.setattr(settings, "site_auto_check", True)
     real_check = site_check.check_site
-    monkeypatch.setattr(site_check, "check_site",
-                        lambda factory, sid: real_check(factory, sid, transport(OK)))
+
+    def check_with_own_code(factory, sid):
+        with factory() as d:
+            code = d.get(Site, sid).verify_token
+        page = PAGE.replace(TOKEN, code)
+        return real_check(factory, sid, transport({"https://blog.example.com/": (200, HTML, page)}))
+    monkeypatch.setattr(site_check, "check_site", check_with_own_code)
     u = User(email="pub@example.com", hashed_password="x")
     db.add(u)
     db.commit()
@@ -304,3 +312,55 @@ def test_mixed_public_and_private_addresses_blocked(monkeypatch):
         (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 0))])
     with pytest.raises(FetchError, match="не публичный"):
         fetch_page("https://mixed.example.com/", "mixed.example.com", transport({}))
+
+
+# ---------- Подтверждение владения сайтом ----------
+NO_CODE = PAGE.replace(TOKEN, "")
+OTHER_CODE = PAGE.replace(TOKEN, "someone-elses-code")
+
+
+@pytest.mark.parametrize("page", [NO_CODE, OTHER_CODE, PAGE.replace("<meta", "<link")])
+def test_without_code_not_approved_and_no_ai_call(db, site, fake_ai, page):
+    s = _check(db, site, {"https://blog.example.com/": (200, HTML, page)})
+    assert (s.status, s.check_verdict, s.verified_at) == (SiteStatus.PENDING, "unverified", None)
+    assert s.check_summary == "Код подтверждения не найден на главной странице сайта"
+    assert fake_ai.seen == []  # чужой сайт не оценивается — запрос к модели не тратится
+
+
+def test_verified_once_stays_verified(db, site, fake_ai):
+    assert _check(db, site).verified_at is not None
+    site_db = db.get(Site, site.id)
+    site_db.status = SiteStatus.PENDING
+    db.commit()
+    fake_ai.result = ai.AIModerationResult(verdict="review", risk="medium", reasons=[], summary="")
+    s = _check(db, site, {"https://blog.example.com/": (200, HTML, NO_CODE)})  # код убрали после подтверждения
+    assert s.check_verdict == "review" and s.verified_at is not None
+
+
+def test_new_site_gets_code_and_partner_can_check(client, db, fake_ai, monkeypatch):
+    u = User(email="pub@example.com", hashed_password="x")
+    db.add(u)
+    db.commit()
+    h = {"Authorization": f"Bearer {create_access_token(u.id)}"}
+    created = client.post("/api/v1/partner/sites", json={"name": "Блог", "url": "https://blog.example.com/"},
+                          headers=h).json()
+    assert len(created["verify_token"]) == 32 and created["verified"] is False
+    page = PAGE.replace(TOKEN, created["verify_token"])
+    real_check = site_check.check_site
+    monkeypatch.setattr(site_check, "check_site", lambda factory, sid: real_check(
+        factory, sid, transport({"https://blog.example.com/": (200, HTML, page)})))
+    r = client.post(f"/api/v1/partner/sites/{created['id']}/check", headers=h)
+    assert (r.json()["status"], r.json()["verified"]) == ("approved", True)
+    again = client.post(f"/api/v1/partner/sites/{created['id']}/check", headers=h)
+    assert again.status_code == 429  # не чаще раза в минуту
+    other = User(email="other@example.com", hashed_password="x")
+    db.add(other)
+    db.commit()
+    r = client.post(f"/api/v1/partner/sites/{created['id']}/check",
+                    headers={"Authorization": f"Bearer {create_access_token(other.id)}"})
+    assert r.status_code == 404
+
+
+def test_verification_code_hidden_from_others(client, db, site, auth_headers):
+    rows = client.get("/api/v1/admin/partner/sites", headers=auth_headers).json()
+    assert rows[0]["verify_token"] == TOKEN  # администратору видно (поможет партнёру)

@@ -1201,6 +1201,7 @@ async function sitesCard(sites, totals, reload) {
         h("div", { class: "small muted" }, t("partner.siteTotals", { impressions: int(st.impressions),
           clicks: int(st.clicks), earnings: money(st.earnings) }))),
       site.status === "pending" ? h("div", { class: "notice warn" }, t("partner.sitePending")) : null,
+      site.status === "pending" && !site.verified ? verifyBlock(site, reload) : null,
       site.rejection_reason ? h("div", { class: "notice error" }, t("partner.siteReason", { reason: site.rejection_reason })) : null,
       placements.length ? table([t("col.placement"), t("col.embed")], placements.map((p) => {
         const snippet = embedCode(p.code_identifier);
@@ -1229,6 +1230,23 @@ async function sitesCard(sites, totals, reload) {
     blocks.length ? h("div", { class: "stack" }, blocks) : h("div", { class: "empty" }, t("partner.noSites")));
 }
 
+// Подтверждение владения: тег на главной странице сайта, затем «Проверить сейчас»
+function verifyBlock(site, reload) {
+  const tag = `<meta name="adplatform-site-verification" content="${site.verify_token}">`;
+  const check = h("button", { class: "small primary" }, t("partner.verifyCheck"));
+  check.onclick = async () => {
+    const s = await run(check, () => api("POST", `/partner/sites/${site.id}/check`));
+    if (!s) return;
+    toast(s.verified ? t("partner.verifyOk") : t("partner.verifyMissing"), s.verified ? undefined : "error");
+    reload();
+  };
+  return h("div", { class: "notice info stack" },
+    h("b", {}, t("partner.verifyTitle")),
+    h("div", { class: "small" }, t("partner.verifyHint")),
+    h("pre", { class: "code mono" }, tag),
+    h("div", { class: "row" }, h("button", { class: "small", onclick: () => copy(tag) }, t("placements.copyCode")), check));
+}
+
 function referralCard(ref) {
   return h("div", { class: "card stack" },
     h("h2", {}, t("ref.title")),
@@ -1244,7 +1262,7 @@ function referralCard(ref) {
 
 // ---------- Админ: сайты партнёров ----------
 const CHECK_BADGE = { approve: "approved", reachable: "approved", review: "pending", reject: "rejected",
-  unreachable: "rejected", error: "pending" };
+  unreachable: "rejected", unverified: "pending", error: "pending" };
 async function adminSitesView(filter = "pending") {
   const wrap = h("div");
   const reload = async (f = filter) => wrap.replaceWith(await adminSitesView(f));

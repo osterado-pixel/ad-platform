@@ -622,6 +622,9 @@ class SiteResponse(BaseModel):
     status: SiteStatus
     # Причина от администратора — как есть; автоматическая (сообщение сервера) — на языке запроса
     rejection_reason: LocalizedText | None = None
+    # Подтверждение владения: <meta name="adplatform-site-verification" content="verify_token"> на главной
+    verify_token: str | None = None
+    verified: bool = False
     revenue_share: float = Field(validation_alias="effective_share",
                                  description="Доля партнёра от цены клика: 0.6 = 60%")
     created_at: UtcDatetime
@@ -633,7 +636,7 @@ class SiteAdminResponse(SiteResponse):
     custom_share: bool = Field(description="У сайта своя доля, а не общая из настроек")
     fraud_hold: bool = Field(default=False, description="Приостановлен автопилотом за признаки накрутки")
     # Автоматическая проверка — подсказка администратору
-    check_verdict: Literal["approve", "review", "reject", "unreachable", "reachable", "error"] | None = None
+    check_verdict: Literal["approve", "review", "reject", "unreachable", "unverified", "reachable", "error"] | None = None
     check_summary: LocalizedText | None = None
     check_reasons: list[str] | None = None
     checked_at: UtcDatetime | None = None
