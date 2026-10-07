@@ -12,7 +12,6 @@ export function SiteFooter({ lang, t }: { lang: Locale; t: Dictionary["footer"] 
           <a href="/app">{t.cabinet}</a>
           <Link href={`/${lang}/partners`}>{t.partners}</Link>
           <a href="/demo?placement=habr_main_banner">{t.bannerExample}</a>
-          <a href="/docs">{t.api}</a>
         </span>
       </div>
     </footer>

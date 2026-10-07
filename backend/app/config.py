@@ -139,6 +139,10 @@ class Settings(BaseSettings):
     low_balance_threshold: Decimal = Field(default=Decimal("5"), ge=0)
     admin_digest: bool = True
 
+    # Документация API (/docs, /redoc, /openapi.json). На боевом сервере лучше выключить: это полный список
+    # адресов, включая административные (их всё равно защищает вход администратора, но раскрывать незачем)
+    api_docs: bool = True
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 

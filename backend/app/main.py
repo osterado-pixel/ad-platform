@@ -57,6 +57,10 @@ app = FastAPI(
     title="Ad Platform API",
     version="1.0.0",
     description="API рекламной платформы",
+    # API_DOCS=false — документации нет: адреса отвечают 404
+    docs_url="/docs" if settings.api_docs else None,
+    redoc_url="/redoc" if settings.api_docs else None,
+    openapi_url="/openapi.json" if settings.api_docs else None,
     lifespan=lifespan,
 )
 
@@ -119,7 +123,7 @@ def read_root():
         "status": "online",
         "message": tr("Платформа полностью активна!"),
         "web_app": "/app",
-        "docs": "/docs",
+        **({"docs": "/docs"} if settings.api_docs else {}),
     }
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

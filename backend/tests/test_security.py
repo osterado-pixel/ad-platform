@@ -128,3 +128,20 @@ def test_secret_key_same_for_concurrent_workers(tmp_path, monkeypatch):
         keys = set(ex.map(lambda _: config._load_or_create_secret_key(), range(32)))
     assert len(keys) == 1
     assert [p.name for p in tmp_path.iterdir()] == ["secret_key"]  # временные файлы убраны
+
+
+def test_api_docs_can_be_disabled():
+    # Настройка читается при создании приложения — проверяем в отдельном процессе с API_DOCS=false
+    import os
+    import subprocess
+    import sys
+    code = (
+        "from fastapi.testclient import TestClient\n"
+        "from app.main import app\n"
+        "c = TestClient(app)\n"
+        "print([c.get(p).status_code for p in ('/docs', '/redoc', '/openapi.json')], 'docs' in c.get('/').json())\n"
+    )
+    env = {**os.environ, "API_DOCS": "false", "DATABASE_URL": "sqlite://"}
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
+                         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert out.stdout.strip() == "[404, 404, 404] False", out.stderr
