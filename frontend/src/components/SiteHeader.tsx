@@ -17,6 +17,7 @@ export function SiteHeader({ lang, t }: { lang: Locale; t: Dictionary["header"] 
           <Link href={`/${lang}#how`}>{t.how}</Link>
           <Link href={`/${lang}#pricing`}>{t.pricing}</Link>
           <Link href={`/${lang}/generate`}>{t.copywriter}</Link>
+          <Link href={`/${lang}/partners`}>{t.partners}</Link>
           <LanguageSwitcher current={lang} label={t.language} />
           <a href="/app" className="btn primary">
             {t.login}

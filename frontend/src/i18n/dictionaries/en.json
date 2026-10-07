@@ -8,11 +8,13 @@
     "how": "How it works",
     "pricing": "Pricing",
     "copywriter": "AI copywriter",
+    "partners": "Partners",
     "login": "Log in",
     "language": "Language"
   },
   "footer": {
     "cabinet": "Dashboard",
+    "partners": "Partner program",
     "bannerExample": "Banner example on a website",
     "api": "API for developers"
   },
@@ -118,5 +120,77 @@
     "title": "Page not found",
     "text": "This page doesn't exist or has moved.",
     "home": "Go to the home page"
+  },
+  "partners": {
+    "metaTitle": "Partner program: earn from your website",
+    "metaDescription": "Show ads on your website and earn {share} of every click. Payouts from {min}, plus a referral program: {refShare} of the platform's revenue from people you invite.",
+    "badge": "Partner program",
+    "titleStart": "Your site earns",
+    "titleAccent": "{share} of every click",
+    "lead": "Add one line of code and advertisers' ads appear on your site. We pay per click, and {share} of the click price goes to you. No fees and no minimum traffic.",
+    "cta": "Become a partner",
+    "ctaReferral": "Referral program",
+    "howTitle": "How to start",
+    "steps": [
+      {
+        "title": "Sign up",
+        "text": "It's free. In your account, open the Partners section."
+      },
+      {
+        "title": "Add your site",
+        "text": "Enter its address. We review sites, usually within a day."
+      },
+      {
+        "title": "Paste the code",
+        "text": "Create a placement for each banner spot and paste its code into the page."
+      },
+      {
+        "title": "Get paid",
+        "text": "{share} of every click. After {days} days you can withdraw your earnings or spend them on your own ads."
+      }
+    ],
+    "codeTitle": "One line of code",
+    "codeText": "The banner adapts to your site's light and dark theme, doesn't break your layout and doesn't slow the page down. When there's no ad, the spot takes up no space.",
+    "termsTitle": "Terms",
+    "terms": [
+      {
+        "title": "{share} of the click price",
+        "text": "Advertisers compete with bids for impressions on your site: the higher the bid, the more you earn per click."
+      },
+      {
+        "title": "Earnings after {days} days",
+        "text": "During this time we check clicks for fraud, so honest partners don't share revenue with dishonest ones."
+      },
+      {
+        "title": "Payouts from {min}",
+        "text": "PayPal, bank transfer, card or crypto. Or an instant transfer to your ad balance, with no minimum."
+      },
+      {
+        "title": "Transparent statistics",
+        "text": "Impressions, clicks, CTR and earnings by day and by site, right in your account."
+      }
+    ],
+    "referralTitle": "Referral program",
+    "referralText": "Invite an advertiser or site owner with your link and get {refShare} of the platform's revenue from them for {refDays} days. Your link is in the Partners section of your account.",
+    "faqTitle": "Questions",
+    "faq": [
+      {
+        "q": "Which sites are accepted?",
+        "a": "Live sites with their own content. We don't accept sites with prohibited content, empty sites or sites made only to show ads."
+      },
+      {
+        "q": "Why aren't earnings available right away?",
+        "a": "The {days} days let us find fake clicks before paying out. Sites caught inflating clicks are blocked, and their pending earnings aren't paid."
+      },
+      {
+        "q": "Can I click the ads on my own site?",
+        "a": "No: repeat clicks and bot clicks aren't paid, and click fraud gets the site blocked. Your own ads on your own site don't earn anything."
+      },
+      {
+        "q": "How do I get paid?",
+        "a": "In your account, enter an amount from {min}, a method and your details. An administrator sends the money and marks the request as done."
+      }
+    ],
+    "finalTitle": "Start earning from your site"
   }
 }

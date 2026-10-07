@@ -33,7 +33,7 @@ export default async function RootLayout({ children, params }: LayoutProps<"/[la
       <body>
         <SiteHeader lang={lang} t={t.header} />
         <main>{children}</main>
-        <SiteFooter t={t.footer} />
+        <SiteFooter lang={lang} t={t.footer} />
       </body>
     </html>
   );

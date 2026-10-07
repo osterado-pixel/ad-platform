@@ -8,11 +8,13 @@
     "how": "So funktioniert's",
     "pricing": "Preise",
     "copywriter": "KI-Texter",
+    "partners": "Partner",
     "login": "Anmelden",
     "language": "Sprache"
   },
   "footer": {
     "cabinet": "Kundenbereich",
+    "partners": "Partnerprogramm",
     "bannerExample": "Banner-Beispiel auf einer Website",
     "api": "API für Entwickler"
   },
@@ -118,5 +120,77 @@
     "title": "Seite nicht gefunden",
     "text": "Diese Seite gibt es nicht oder sie ist umgezogen.",
     "home": "Zur Startseite"
+  },
+  "partners": {
+    "metaTitle": "Partnerprogramm: Mit Ihrer Website verdienen",
+    "metaDescription": "Zeigen Sie Werbung auf Ihrer Website und verdienen Sie {share} jedes Klicks. Auszahlungen ab {min}, dazu ein Empfehlungsprogramm: {refShare} der Plattformeinnahmen von eingeladenen Personen.",
+    "badge": "Partnerprogramm",
+    "titleStart": "Ihre Website verdient",
+    "titleAccent": "{share} jedes Klicks",
+    "lead": "Fügen Sie eine Zeile Code ein, und auf Ihrer Website erscheinen Anzeigen von Werbetreibenden. Wir zahlen pro Klick, {share} des Klickpreises gehen an Sie. Keine Gebühren, kein Mindesttraffic.",
+    "cta": "Partner werden",
+    "ctaReferral": "Empfehlungsprogramm",
+    "howTitle": "So starten Sie",
+    "steps": [
+      {
+        "title": "Registrieren",
+        "text": "Kostenlos. Öffnen Sie in Ihrem Konto den Bereich „Partner“."
+      },
+      {
+        "title": "Website hinzufügen",
+        "text": "Geben Sie die Adresse an. Wir prüfen Websites meist innerhalb eines Tages."
+      },
+      {
+        "title": "Code einfügen",
+        "text": "Legen Sie für jeden Bannerplatz eine Werbefläche an und fügen Sie ihren Code in die Seite ein."
+      },
+      {
+        "title": "Geld erhalten",
+        "text": "{share} jedes Klicks. Nach {days} Tagen können Sie Ihre Einnahmen auszahlen lassen oder für eigene Werbung nutzen."
+      }
+    ],
+    "codeTitle": "Eine Zeile Code",
+    "codeText": "Das Banner passt sich dem hellen und dunklen Design Ihrer Website an, stört das Layout nicht und bremst die Seite nicht. Ohne Anzeige nimmt der Platz keinen Raum ein.",
+    "termsTitle": "Konditionen",
+    "terms": [
+      {
+        "title": "{share} des Klickpreises",
+        "text": "Werbetreibende bieten um Einblendungen auf Ihrer Website: Je höher das Gebot, desto mehr verdienen Sie pro Klick."
+      },
+      {
+        "title": "Einnahmen nach {days} Tagen",
+        "text": "In dieser Zeit prüfen wir Klicks auf Betrug, damit ehrliche Partner ihre Einnahmen nicht mit unehrlichen teilen."
+      },
+      {
+        "title": "Auszahlung ab {min}",
+        "text": "PayPal, Banküberweisung, Karte oder Krypto. Oder sofort auf Ihr Werbeguthaben, ohne Mindestbetrag."
+      },
+      {
+        "title": "Transparente Statistik",
+        "text": "Einblendungen, Klicks, CTR und Einnahmen nach Tagen und je Website, direkt in Ihrem Konto."
+      }
+    ],
+    "referralTitle": "Empfehlungsprogramm",
+    "referralText": "Laden Sie Werbetreibende oder Website-Betreiber mit Ihrem Link ein und erhalten Sie {refDays} Tage lang {refShare} der Plattformeinnahmen von ihnen. Ihren Link finden Sie im Bereich „Partner“ Ihres Kontos.",
+    "faqTitle": "Fragen",
+    "faq": [
+      {
+        "q": "Welche Websites werden angenommen?",
+        "a": "Aktive Websites mit eigenen Inhalten. Websites mit verbotenen Inhalten, leere Websites und Websites nur für Werbung nehmen wir nicht an."
+      },
+      {
+        "q": "Warum sind Einnahmen nicht sofort verfügbar?",
+        "a": "Die {days} Tage geben uns Zeit, gefälschte Klicks vor der Auszahlung zu finden. Bei Klickbetrug wird die Website gesperrt, noch nicht gereifte Einnahmen werden nicht ausgezahlt."
+      },
+      {
+        "q": "Darf ich auf Anzeigen auf meiner eigenen Website klicken?",
+        "a": "Nein: Wiederholte Klicks und Bot-Klicks werden nicht bezahlt, Klickbetrug führt zur Sperre. Eigene Anzeigen auf der eigenen Website bringen keine Einnahmen."
+      },
+      {
+        "q": "Wie erhalte ich eine Auszahlung?",
+        "a": "Geben Sie in Ihrem Konto einen Betrag ab {min}, die Methode und Ihre Daten an. Ein Administrator überweist das Geld und markiert den Antrag als erledigt."
+      }
+    ],
+    "finalTitle": "Verdienen Sie jetzt mit Ihrer Website"
   }
 }
