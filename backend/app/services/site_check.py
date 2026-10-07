@@ -202,7 +202,10 @@ def retry_errors(session_factory: Callable[[], Session]) -> int:
             Site.checked_at < now - timedelta(minutes=5), Site.created_at >= now - timedelta(hours=24),
         ).order_by(Site.id).limit(10)).all()
     for site_id in ids:
-        check_site(session_factory, site_id)
+        try:
+            check_site(session_factory, site_id)
+        except Exception:  # один сбойный сайт не останавливает остальные
+            log.exception("Ошибка повторной проверки сайта #%s", site_id)
     return len(ids)
 
 

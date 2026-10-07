@@ -309,3 +309,32 @@ def test_periodic_loop_calls_retry(db, monkeypatch):
     monkeypatch.setattr(site_check, "retry_errors", lambda f: calls.append("sites") or 0)
     ai_cleanup.retry_ai_reviews_sync(background_session_factory(db))
     assert calls == ["campaigns", "sites"]
+
+
+def test_retry_window_not_extended_by_failed_attempts(client, db, placement, fake_ai):
+    """Неудачная попытка не сдвигает updated_at — через сутки после отправки повторы прекращаются."""
+    from app.database import background_session_factory
+    cid = _submitted(client, db, placement, fake_ai)
+    _stale(db, cid, updated_hours_ago=23)
+    before = fresh(db, cid).updated_at
+    assert moderation.retry_failed_reviews(background_session_factory(db)) == 1  # модель снова не ответила
+    c = fresh(db, cid)
+    assert c.ai_verdict == "error" and c.updated_at == before
+
+
+def test_retry_continues_after_one_failure(client, db, placement, fake_ai, monkeypatch):
+    from app.database import background_session_factory
+    first = _submitted(client, db, placement, fake_ai, title="Первая")
+    second = _submitted(client, db, placement, fake_ai, title="Вторая")
+    _stale(db, first)
+    _stale(db, second)
+    real, seen = moderation.run_ai_review, []
+
+    def flaky(factory, cid):
+        seen.append(cid)
+        if cid == first:
+            raise RuntimeError("сбой")
+        return real(factory, cid)
+    monkeypatch.setattr(moderation, "run_ai_review", flaky)
+    assert moderation.retry_failed_reviews(background_session_factory(db)) == 2
+    assert seen == [first, second]

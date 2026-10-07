@@ -50,11 +50,15 @@ def retry_ai_reviews_sync(session_factory=None) -> None:
     from app.moderation import retry_failed_reviews
     from app.services.site_check import retry_errors
     factory = session_factory or SessionLocal
+    campaigns = sites = 0
     try:
-        campaigns, sites = retry_failed_reviews(factory), retry_errors(factory)
+        campaigns = retry_failed_reviews(factory)
     except Exception:
-        logger.exception("Ошибка повторной AI-проверки")
-        return
+        logger.exception("Ошибка повторной AI-проверки кампаний")
+    try:  # сбой с кампаниями не отменяет повтор для сайтов
+        sites = retry_errors(factory)
+    except Exception:
+        logger.exception("Ошибка повторной проверки сайтов")
     if campaigns or sites:
         logger.info("Повторная AI-проверка: кампаний %s, сайтов %s", campaigns, sites)
 
