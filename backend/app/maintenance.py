@@ -92,6 +92,18 @@ def mature_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
         log.info("Партнёрам зачислен созревший заработок: %s", amount)
 
 
+def fraud_block_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
+    from app.services.fraud import auto_block
+    try:
+        with session_factory() as db:
+            blocked = auto_block(db)
+    except SQLAlchemyError:
+        log.exception("Ошибка при автоматической блокировке накрутки")
+        return
+    if blocked:
+        log.warning("Заблокированы за накрутку сайты партнёров: %s", blocked)
+
+
 def recheck_sites_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
     from app.services.site_check import recheck_pending
     try:
@@ -114,6 +126,9 @@ async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS)
                 await asyncio.to_thread(purge_sync)
             # Созревший заработок партнёров — в «доступно к выводу» (не удаление, поэтому без AUTO_PURGE)
             await asyncio.to_thread(mature_sync)
+            # Накрутка: явные случаи блокируются до того, как заработок созреет
+            if settings.fraud_auto_block:
+                await asyncio.to_thread(fraud_block_sync)
             # Сайты на проверке, которые не открылись или не проверены, — проверить снова
             if settings.site_auto_check:
                 await asyncio.to_thread(recheck_sites_sync)

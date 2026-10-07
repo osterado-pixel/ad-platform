@@ -620,7 +620,8 @@ class SiteResponse(BaseModel):
     url: str
     domain: str
     status: SiteStatus
-    rejection_reason: str | None = None
+    # Причина от администратора — как есть; автоматическая (сообщение сервера) — на языке запроса
+    rejection_reason: LocalizedText | None = None
     revenue_share: float = Field(validation_alias="effective_share",
                                  description="Доля партнёра от цены клика: 0.6 = 60%")
     created_at: UtcDatetime

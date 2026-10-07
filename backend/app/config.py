@@ -156,6 +156,8 @@ class Settings(BaseSettings):
     # пользователя — пригласившему, и сколько дней с регистрации приглашённого она начисляется
     referral_share: Decimal = Field(default=Decimal("0.10"), ge=0, le=Decimal("0.5"))
     referral_days: int = Field(default=365, ge=1, le=3650)
+    # Раз в сутки блокировать сайты с 2+ признаками накрутки и аннулировать созревающий заработок владельца
+    fraud_auto_block: bool = True
     # Автоматическая проверка новых сайтов партнёров (открывается ли, оценка ИИ) — app/services/site_check.py.
     # Решение без администратора — по тем же правилам AI_AUTO_APPROVE / AI_AUTO_REJECT
     site_auto_check: bool = True

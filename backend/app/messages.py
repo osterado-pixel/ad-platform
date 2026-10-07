@@ -276,6 +276,13 @@ MESSAGES: tuple[dict[str, str], ...] = (
        "The bid is below the placement's cost per click ({price})",
        "Das Gebot liegt unter dem Klickpreis der Werbefläche ({price})"),
 
+    _m("Автоматическая блокировка, признаки накрутки: {reasons}",
+       "Blocked automatically, signs of click fraud: {reasons}",
+       "Automatisch gesperrt, Anzeichen von Klickbetrug: {reasons}"),
+    _m("слишком высокий CTR", "CTR too high", "CTR zu hoch"),
+    _m("клики с малого числа адресов", "clicks from few addresses", "Klicks von wenigen Adressen"),
+    _m("кликов больше, чем показов", "more clicks than impressions", "mehr Klicks als Einblendungen"),
+
     # ---------- Автоматическая проверка сайтов ----------
     _m("Сайт не открылся: {reason}", "The site didn't open: {reason}", "Die Website ließ sich nicht öffnen: {reason}"),
     _m("адрес не http/https", "the address isn't http/https", "die Adresse ist nicht http/https"),

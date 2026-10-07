@@ -6,8 +6,10 @@
 - few_ips — мало разных адресов на клики (клики с одних и тех же IP), при заметном числе кликов;
 - clicks_over_impressions — кликов больше, чем показов: ссылку клика открывают напрямую, без баннера.
 
-Отчёт лишь подсказывает: решение (заблокировать сайт и аннулировать созревающий заработок) — за администратором.
 Пока заработок созревает (EARNINGS_HOLD_DAYS), его можно аннулировать — forfeit_pending().
+Автопилот (FRAUD_AUTO_BLOCK, раз в сутки — auto_block): одобренный сайт с двумя и более признаками сразу
+блокируется, созревающий заработок владельца аннулируется. Один признак — только в отчёте, решает человек:
+по отдельности каждый бывает и у честного сайта (маленький сайт с одним активным читателем).
 """
 import time
 from datetime import timedelta
@@ -17,13 +19,21 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.database import write_lock
-from app.models import Click, EarningSource, PartnerEarning, Placement, Site, SiteDailyStat, User
+from app.models import Click, EarningSource, PartnerEarning, Placement, Site, SiteDailyStat, SiteStatus, User
 from app.stats import utc_today
 
 HIGH_CTR_PERCENT = 5.0
 HIGH_CTR_MIN_IMPRESSIONS = 100
 FEW_IPS_RATIO = 0.5          # разных адресов меньше половины кликов
 FEW_IPS_MIN_CLICKS = 20
+AUTO_BLOCK_MIN_FLAGS = 2
+AUTO_BLOCK_DAYS = 14
+# Признак → причина для партнёра (переводится по каталогу app/messages.py)
+FLAG_REASONS = {
+    "high_ctr": "слишком высокий CTR",
+    "few_ips": "клики с малого числа адресов",
+    "clicks_over_impressions": "кликов больше, чем показов",
+}
 
 
 def site_flags(impressions: int, clicks: int, unique_ips: int) -> list[str]:
@@ -88,3 +98,21 @@ def forfeit_pending(db: Session, user_id: int) -> Decimal:
             forfeited=PartnerEarning.forfeited + PartnerEarning.amount, amount=0))
         db.commit()
     return Decimal(total).quantize(Decimal("0.01"))
+
+
+def auto_block(db: Session, days: int = AUTO_BLOCK_DAYS) -> list[int]:
+    """Блокирует одобренные сайты с AUTO_BLOCK_MIN_FLAGS+ признаками и аннулирует созревающий заработок
+    их владельцев. Возвращает id заблокированных сайтов."""
+    blocked = []
+    for row in fraud_report(db, days):
+        if row["status"] != SiteStatus.APPROVED or len(row["flags"]) < AUTO_BLOCK_MIN_FLAGS:
+            continue
+        reasons = "; ".join(FLAG_REASONS[f] for f in row["flags"])
+        with write_lock():
+            site = db.get(Site, row["site_id"])
+            site.status = SiteStatus.BLOCKED
+            site.rejection_reason = f"Автоматическая блокировка, признаки накрутки: {reasons}"
+            db.commit()
+        forfeit_pending(db, row["user_id"])
+        blocked.append(row["site_id"])
+    return blocked

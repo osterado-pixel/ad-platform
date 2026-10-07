@@ -144,3 +144,44 @@ def test_click_remembers_placement(client, db):
     db.commit()
     client.get(f"/api/v1/ad/click/{c.id}", follow_redirects=False)
     assert db.scalar(select(Click.placement_id).where(Click.campaign_id == c.id)) == pl.id
+
+
+# ---------- Автопилот: явная накрутка блокируется сама ----------
+def test_auto_block_two_flags(db, world):
+    pub, honest, bad, good = world
+    assert fraud.auto_block(db) == [bad.id]
+    db.refresh(bad)
+    assert bad.status == SiteStatus.BLOCKED
+    assert bad.rejection_reason == ("Автоматическая блокировка, признаки накрутки: "
+                                    "слишком высокий CTR; клики с малого числа адресов")
+    assert partners.pending_amount(db, pub.id) == Decimal("1")      # остался только реферальный
+    assert partners.pending_amount(db, honest.id) == Decimal("6")
+    assert fraud.auto_block(db) == []                                # уже заблокирован — повторно не трогаем
+
+
+def test_auto_block_ignores_single_flag(db, world):
+    _, _, bad, _ = world
+    stat = db.scalar(select(SiteDailyStat).where(SiteDailyStat.site_id == bad.id))
+    stat.impressions = 10_000  # CTR 0.3% — остаётся один признак (мало адресов)
+    db.commit()
+    assert fraud.auto_block(db) == []
+    db.refresh(bad)
+    assert bad.status == SiteStatus.APPROVED
+
+
+def test_auto_block_reason_translated(client, db, world):
+    pub, _, bad, _ = world
+    fraud.auto_block(db)
+    h = {"Authorization": f"Bearer {create_access_token(pub.id)}", "Accept-Language": "en"}
+    site = client.get("/api/v1/partner/sites", headers=h).json()[0]
+    assert site["rejection_reason"] == ("Blocked automatically, signs of click fraud: "
+                                        "CTR too high; clicks from few addresses")
+
+
+def test_daily_job_runs_auto_block(db, world, monkeypatch):
+    from app import maintenance
+    from app.database import background_session_factory
+    _, _, bad, _ = world
+    maintenance.fraud_block_sync(background_session_factory(db))
+    db.expire_all()
+    assert db.get(Site, bad.id).status == SiteStatus.BLOCKED
