@@ -44,6 +44,7 @@ def server():
            # Все пользователи тестов регистрируются с 127.0.0.1; сам лимит проверяют юнит-тесты
            "REGISTER_MAX_PER_IP_PER_HOUR": "1000",
            "PAYMENTS_PROVIDER": "test",  # оплата картой — тестовым провайдером (деньги ненастоящие)
+           "SITE_AUTO_CHECK": "false",  # автопроверка сайтов ходит в интернет — в браузерных тестах не нужна
            "ANTHROPIC_API_KEY": "", "GEMINI_API_KEY": "", "OPENAI_API_KEY": ""}  # без обращений к внешним API
     SERVER_DB["url"] = db_url
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env,

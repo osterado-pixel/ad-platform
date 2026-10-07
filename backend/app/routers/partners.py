@@ -7,14 +7,14 @@ from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_user, require_admin
 from app.config import settings
-from app.database import get_db, write_lock
+from app.database import background_session_factory, get_db, write_lock
 from app.models import (
     EarningSource, PartnerEarning, PartnerTransaction, Payout, PayoutStatus, Placement, Site, SiteDailyStat, SiteStatus, User,
 )
@@ -27,7 +27,7 @@ from app.schemas import (
     PlacementResponse, ReferralInfo, SiteAdminResponse, SiteCreate, SiteModerate, SiteResponse, TransferRequest,
     WalletBalanceResponse,
 )
-from app.services import fraud, partners
+from app.services import fraud, partners, site_check
 
 router = APIRouter(prefix="/api/v1/partner", tags=["Партнёрская программа"])
 admin_router = APIRouter(prefix="/api/v1/admin/partner", tags=["Партнёрская программа (для админа)"])
@@ -50,8 +50,10 @@ def _my_site(db: Session, site_id: int, user: User) -> Site:
 
 # ---------- Сайты партнёра ----------
 @router.post("/sites", response_model=SiteResponse, status_code=status.HTTP_201_CREATED)
-def add_site(data: SiteCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Добавить сайт. Реклама на нём начнёт показываться после проверки администратором."""
+def add_site(data: SiteCreate, background: BackgroundTasks, db: Session = Depends(get_db),
+             user: User = Depends(get_current_user)):
+    """Добавить сайт. Сразу после ответа сайт проверяется автоматически (открывается ли, оценка ИИ):
+    уверенный результат — одобрение или отказ без администратора, сомнения — решает администратор."""
     domain = _domain(data.url)
     if not domain:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Укажите адрес сайта")
@@ -69,6 +71,8 @@ def add_site(data: SiteCreate, db: Session = Depends(get_db), user: User = Depen
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SITE_TAKEN) from None
     db.refresh(site)
+    if settings.site_auto_check:
+        background.add_task(site_check.check_site, background_session_factory(db), site.id)
     return site
 
 
@@ -239,6 +243,16 @@ def moderate_site(site_id: int, data: SiteModerate, db: Session = Depends(get_db
         fraud.forfeit_pending(db, site.user_id)
     db.refresh(site)
     return site
+
+
+@admin_router.post("/sites/{site_id}/check", response_model=SiteAdminResponse)
+def recheck_site(site_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Проверить сайт автоматически ещё раз (сейчас, с ожиданием результата)."""
+    if db.get(Site, site_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сайт не найден")
+    site_check.check_site(background_session_factory(db), site_id)
+    db.expire_all()
+    return db.scalar(select(Site).options(selectinload(Site.owner)).where(Site.id == site_id))
 
 
 @admin_router.get("/fraud", response_model=list[FraudRow])

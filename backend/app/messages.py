@@ -276,6 +276,22 @@ MESSAGES: tuple[dict[str, str], ...] = (
        "The bid is below the placement's cost per click ({price})",
        "Das Gebot liegt unter dem Klickpreis der Werbefläche ({price})"),
 
+    # ---------- Автоматическая проверка сайтов ----------
+    _m("Сайт не открылся: {reason}", "The site didn't open: {reason}", "Die Website ließ sich nicht öffnen: {reason}"),
+    _m("адрес не http/https", "the address isn't http/https", "die Adresse ist nicht http/https"),
+    _m("нестандартный порт", "non-standard port", "ungewöhnlicher Port"),
+    _m("адрес не найден или не публичный", "the address wasn't found or isn't public",
+       "die Adresse wurde nicht gefunden oder ist nicht öffentlich"),
+    _m("сайт ответил кодом {code}", "the site responded with code {code}", "die Website antwortete mit Code {code}"),
+    _m("главная страница — не HTML", "the home page isn't HTML", "die Startseite ist kein HTML"),
+    _m("сайт не открывается ({error})", "the site doesn't open ({error})", "die Website öffnet sich nicht ({error})"),
+    _m("сайт перенаправляет на другой домен", "the site redirects to another domain",
+       "die Website leitet auf eine andere Domain weiter"),
+    _m("слишком много перенаправлений", "too many redirects", "zu viele Weiterleitungen"),
+    _m("модель отказалась проверять сайт — нужна ручная модерация",
+       "the model refused to review the site, so manual review is needed",
+       "das Modell hat die Prüfung der Website abgelehnt – manuelle Prüfung nötig"),
+
     # ---------- Партнёрская программа ----------
     _m("Эта площадка работает только на сайте партнёра, для которого создана",
        "This placement only works on the partner site it was created for",

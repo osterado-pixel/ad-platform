@@ -156,6 +156,9 @@ class Settings(BaseSettings):
     # пользователя — пригласившему, и сколько дней с регистрации приглашённого она начисляется
     referral_share: Decimal = Field(default=Decimal("0.10"), ge=0, le=Decimal("0.5"))
     referral_days: int = Field(default=365, ge=1, le=3650)
+    # Автоматическая проверка новых сайтов партнёров (открывается ли, оценка ИИ) — app/services/site_check.py.
+    # Решение без администратора — по тем же правилам AI_AUTO_APPROVE / AI_AUTO_REJECT
+    site_auto_check: bool = True
     # Аукцион показов: доля показов случайной кампании (остальные — с наибольшим «ставка × CTR»).
     # Без неё новая кампания без кликов никогда не набрала бы статистику и не попала бы в показ
     auction_explore_rate: float = Field(default=0.1, ge=0, le=1)

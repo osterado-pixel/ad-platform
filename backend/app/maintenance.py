@@ -92,6 +92,17 @@ def mature_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
         log.info("Партнёрам зачислен созревший заработок: %s", amount)
 
 
+def recheck_sites_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
+    from app.services.site_check import recheck_pending
+    try:
+        count = recheck_pending(session_factory)
+    except SQLAlchemyError:
+        log.exception("Ошибка при повторной проверке сайтов партнёров")
+        return
+    if count:
+        log.info("Повторно проверено сайтов партнёров: %s", count)
+
+
 async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS) -> None:
     """Раз в сутки, пока работает сервер (первый раз — сразу после запуска).
 
@@ -103,6 +114,9 @@ async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS)
                 await asyncio.to_thread(purge_sync)
             # Созревший заработок партнёров — в «доступно к выводу» (не удаление, поэтому без AUTO_PURGE)
             await asyncio.to_thread(mature_sync)
+            # Сайты на проверке, которые не открылись или не проверены, — проверить снова
+            if settings.site_auto_check:
+                await asyncio.to_thread(recheck_sites_sync)
             await asyncio.sleep(interval_seconds)
         except asyncio.CancelledError:
             raise  # остановка сервера

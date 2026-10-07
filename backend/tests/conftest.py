@@ -14,6 +14,9 @@ os.environ["DATABASE_URL"] = "sqlite://"
 # обращаться к настоящему API (это платно). AI-тесты включают его подменой модели
 for _key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "SENTRY_DSN"):
     os.environ[_key] = ""
+# Автопроверка сайтов партнёров ходит в интернет — в тестах выключена (tests/test_site_check.py
+# включает её сам, с подменённой сетью)
+os.environ["SITE_AUTO_CHECK"] = "false"
 # Минимальная стоимость bcrypt: в тестах стойкость к перебору не нужна, а скорость — да
 os.environ.setdefault("BCRYPT_ROUNDS", "4")
 

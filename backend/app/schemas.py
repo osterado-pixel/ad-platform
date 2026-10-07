@@ -630,6 +630,11 @@ class SiteAdminResponse(SiteResponse):
     user_id: int
     owner_email: str
     custom_share: bool = Field(description="У сайта своя доля, а не общая из настроек")
+    # Автоматическая проверка — подсказка администратору
+    check_verdict: Literal["approve", "review", "reject", "unreachable", "reachable", "error"] | None = None
+    check_summary: LocalizedText | None = None
+    check_reasons: list[str] | None = None
+    checked_at: UtcDatetime | None = None
 
 
 class SiteModerate(BaseModel):

@@ -1243,6 +1243,8 @@ function referralCard(ref) {
 }
 
 // ---------- Админ: сайты партнёров ----------
+const CHECK_BADGE = { approve: "approved", reachable: "approved", review: "pending", reject: "rejected",
+  unreachable: "rejected", error: "pending" };
 async function adminSitesView(filter = "pending") {
   const wrap = h("div");
   const reload = async (f = filter) => wrap.replaceWith(await adminSitesView(f));
@@ -1264,14 +1266,26 @@ async function adminSitesView(filter = "pending") {
     approve.onclick = () => send("approved", approve);
     reject.onclick = () => send("rejected", reject);
     block.onclick = () => send("blocked", block);
+    const recheck = h("button", { class: "small" }, t("sites.recheck"));
+    recheck.onclick = async () => {
+      if (await run(recheck, () => api("POST", `/admin/partner/sites/${site.id}/check`), t("sites.checked"))) reload();
+    };
+    // Итог автоматической проверки — подсказка (решение по уверенному итогу уже принято автопилотом)
+    const check = site.check_verdict ? h("div", { class: "small", style: "margin-top:4px" },
+      h("span", { class: `badge ${CHECK_BADGE[site.check_verdict] || ""}` }, known("check", site.check_verdict)),
+      site.check_summary ? ` ${site.check_summary}` : "",
+      (site.check_reasons || []).length ? h("div", { class: "muted" }, site.check_reasons.join("; ")) : null,
+      h("div", { class: "muted" }, t("sites.checkedAt", { date: dateTime(site.checked_at) })))
+      : h("div", { class: "small muted", style: "margin-top:4px" }, t("sites.notChecked"));
     return h("tr", {},
       h("td", {}, h("b", {}, site.name), " ", siteBadge(site.status),
         h("div", { class: "small" }, h("a", { href: site.url, target: "_blank", rel: "noopener noreferrer", class: "break" }, site.url)),
         h("div", { class: "small muted" }, site.owner_email, " · ", dateTime(site.created_at)),
-        site.rejection_reason ? h("div", { class: "small", style: "color:var(--danger)" }, site.rejection_reason) : null),
+        site.rejection_reason ? h("div", { class: "small", style: "color:var(--danger)" }, site.rejection_reason) : null,
+        check),
       h("td", {}, h("div", { class: "inline-form" }, share, "%"), h("div", { class: "hint" }, t("sites.shareHint"))),
       h("td", { class: "stack" }, reason, h("div", { class: "row" },
-        approve, site.status === "rejected" ? null : reject, site.status === "blocked" ? null : block)));
+        approve, site.status === "rejected" ? null : reject, site.status === "blocked" ? null : block, recheck)));
   };
   const feed = await offsetList(`/admin/partner/sites?limit=50${query}`, row, rows);
   add(wrap,

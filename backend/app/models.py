@@ -155,6 +155,12 @@ class Site(Base):
     rejection_reason: Mapped[str | None] = mapped_column(Text)
     # Доля партнёра от цены клика (0.6 = 60%). NULL — общая из настроек (PUBLISHER_REVENUE_SHARE)
     revenue_share: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    # Автоматическая проверка (app/services/site_check.py): approve | review | reject — оценка ИИ;
+    # unreachable — сайт не открылся; reachable — открылся, ИИ выключен; error — сбой модели
+    check_verdict: Mapped[str | None] = mapped_column(String(20))
+    check_summary: Mapped[str | None] = mapped_column(Text)
+    check_reasons: Mapped[list | None] = mapped_column(JSON)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

@@ -125,6 +125,9 @@ def test_server_codes_have_translations():
         assert f"method.{method}" in keys
     for flag in typing.get_args(schemas.FraudFlag):
         assert f"fraudflag.{flag}" in keys
+    check = schemas.SiteAdminResponse.model_fields["check_verdict"].annotation
+    for verdict in typing.get_args(typing.get_args(check)[0]):
+        assert f"check.{verdict}" in keys
     # Literal[...] | None из карточки модерации → значения Literal
     fields = schemas.CampaignAdminResponse.model_fields
     verdicts = typing.get_args(typing.get_args(fields["ai_verdict"].annotation)[0])
