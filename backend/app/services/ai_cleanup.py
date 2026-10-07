@@ -45,6 +45,20 @@ async def cleanup_stuck_ai_tasks(timeout_minutes: int = 10) -> int:
     return await asyncio.to_thread(cleanup_stuck_ai_tasks_sync, timeout_minutes)
 
 
+def retry_ai_reviews_sync(session_factory=None) -> None:
+    from app.database import SessionLocal
+    from app.moderation import retry_failed_reviews
+    from app.services.site_check import retry_errors
+    factory = session_factory or SessionLocal
+    try:
+        campaigns, sites = retry_failed_reviews(factory), retry_errors(factory)
+    except Exception:
+        logger.exception("Ошибка повторной AI-проверки")
+        return
+    if campaigns or sites:
+        logger.info("Повторная AI-проверка: кампаний %s, сайтов %s", campaigns, sites)
+
+
 async def schedule_task_cleanup(interval_seconds: int | None = None, timeout_minutes: int | None = None) -> None:
     """Периодическая очистка внутри процесса сервера (без отдельного Celery Beat).
 
@@ -58,6 +72,8 @@ async def schedule_task_cleanup(interval_seconds: int | None = None, timeout_min
         try:
             await asyncio.sleep(interval)
             await cleanup_stuck_ai_tasks(timeout_minutes=timeout)
+            # Модель не ответила (перегрузка, лимиты) — повторить проверку кампаний и сайтов
+            await asyncio.to_thread(retry_ai_reviews_sync)
         except asyncio.CancelledError:
             logger.info("Фоновая очистка AI-задач остановлена")
             raise  # отмена должна дойти до вызвавшего, иначе остановка сервера «зависнет» на ожидании

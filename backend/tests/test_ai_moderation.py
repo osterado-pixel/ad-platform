@@ -244,3 +244,68 @@ def test_autopilot_rejects_confident_violation(client, db, placement, autopilot)
     submit(client, h, cid)
     c = fresh(db, cid)
     assert c.status == CampaignStatus.REJECTED and c.rejection_reason.startswith(moderation.AUTO_REJECT_PREFIX)
+
+
+# ---------- Повтор, если модель не ответила ----------
+def _stale(db, cid, *, verdict="error", checked_minutes_ago=10, updated_hours_ago=0):
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update
+    now = datetime.now(timezone.utc)
+    db.execute(update(Campaign).where(Campaign.id == cid).values(
+        ai_verdict=verdict, ai_checked_at=now - timedelta(minutes=checked_minutes_ago),
+        updated_at=now - timedelta(hours=updated_hours_ago)))
+    db.commit()
+
+
+def _submitted(client, db, placement, fake_ai, title="Курсы"):
+    _, h = headers_for(db, f"{title}@mail.ru")
+    r = client.post(URL, json={"placement_id": placement.id, "title": title, "target_url": "https://example.com"},
+                    headers=h)
+    cid = r.json()["id"]
+    fake_ai.result = ai.AIUnavailable("перегрузка")
+    submit(client, h, cid)
+    return cid
+
+
+def test_retry_after_model_error(client, db, placement, fake_ai):
+    from app.database import background_session_factory
+    cid = _submitted(client, db, placement, fake_ai)
+    assert fresh(db, cid).ai_verdict == "error"
+    _stale(db, cid)
+    fake_ai.result = APPROVE
+    assert moderation.retry_failed_reviews(background_session_factory(db)) == 1
+    assert fresh(db, cid).ai_verdict == "approve"
+
+
+@pytest.mark.parametrize("kw", [dict(checked_minutes_ago=1),          # только что пробовали — подождать
+                                dict(updated_hours_ago=25),           # прошли сутки — решает человек
+                                dict(verdict="review")])              # модель ответила — не повторяем
+def test_no_retry(client, db, placement, fake_ai, kw):
+    from app.database import background_session_factory
+    cid = _submitted(client, db, placement, fake_ai)
+    _stale(db, cid, **kw)
+    assert moderation.retry_failed_reviews(background_session_factory(db)) == 0
+
+
+def test_retry_never_checked(client, db, placement, fake_ai):
+    from app.database import background_session_factory
+    cid = _submitted(client, db, placement, fake_ai)
+    _stale(db, cid, verdict=None)
+    fake_ai.result = APPROVE
+    assert moderation.retry_failed_reviews(background_session_factory(db)) == 1
+
+
+def test_no_retry_without_ai(db, monkeypatch):
+    from app.database import background_session_factory
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    assert moderation.retry_failed_reviews(background_session_factory(db)) == 0
+
+
+def test_periodic_loop_calls_retry(db, monkeypatch):
+    from app.database import background_session_factory
+    from app.services import ai_cleanup, site_check
+    calls = []
+    monkeypatch.setattr(moderation, "retry_failed_reviews", lambda f: calls.append("campaigns") or 1)
+    monkeypatch.setattr(site_check, "retry_errors", lambda f: calls.append("sites") or 0)
+    ai_cleanup.retry_ai_reviews_sync(background_session_factory(db))
+    assert calls == ["campaigns", "sites"]

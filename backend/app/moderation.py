@@ -5,9 +5,10 @@
 если кампания всё ещё на модерации и её содержимое не изменилось.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app import ai
@@ -69,3 +70,30 @@ def run_ai_review(session_factory: Callable[[], Session], campaign_id: int) -> C
             notify.campaign_decided(campaign, campaign.owner)
         db.expunge(campaign)
         return campaign
+
+
+# Повтор, если модель не ответила (перегрузка, лимиты): каждые AI_CLEANUP_INTERVAL_SECONDS (5 мин),
+# не чаще раза в RETRY_AFTER и только первые RETRY_WINDOW после отправки — дальше решает человек
+RETRY_AFTER = timedelta(minutes=5)
+RETRY_WINDOW = timedelta(hours=24)
+RETRY_BATCH = 20
+
+
+def retry_failed_reviews(session_factory: Callable[[], Session]) -> int:
+    """Перепроверяет кампании на модерации, по которым модель не ответила или проверки ещё не было
+    (например, сервер перезапустился раньше фоновой проверки). Возвращает число проверок."""
+    if not ai.is_enabled():
+        return 0
+    now = datetime.now(timezone.utc)
+    with session_factory() as db:
+        ids = db.scalars(
+            select(Campaign.id).where(
+                Campaign.status == CampaignStatus.MODERATION,
+                Campaign.updated_at >= now - RETRY_WINDOW,
+                or_(Campaign.ai_verdict.is_(None),
+                    (Campaign.ai_verdict == "error") & (Campaign.ai_checked_at < now - RETRY_AFTER)),
+            ).order_by(Campaign.id).limit(RETRY_BATCH)
+        ).all()
+    for campaign_id in ids:
+        run_ai_review(session_factory, campaign_id)
+    return len(ids)

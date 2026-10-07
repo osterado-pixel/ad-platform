@@ -15,7 +15,7 @@ import logging
 import re
 import socket
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Callable
 from urllib.parse import urljoin, urlsplit
@@ -188,6 +188,22 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
             notify.site_decided(site, site.owner)
         db.expunge(site)
         return site
+
+
+def retry_errors(session_factory: Callable[[], Session]) -> int:
+    """Часто (каждые 5 минут): сайты на проверке, по которым модель не ответила, — первые сутки,
+    не чаще раза в 5 минут. Не открывшиеся сайты — реже, в recheck_pending раз в сутки."""
+    if not (settings.site_auto_check and ai.is_enabled()):
+        return 0
+    now = datetime.now(timezone.utc)
+    with session_factory() as db:
+        ids = db.scalars(select(Site.id).where(
+            Site.status == SiteStatus.PENDING, Site.check_verdict == "error",
+            Site.checked_at < now - timedelta(minutes=5), Site.created_at >= now - timedelta(hours=24),
+        ).order_by(Site.id).limit(10)).all()
+    for site_id in ids:
+        check_site(session_factory, site_id)
+    return len(ids)
 
 
 def recheck_pending(session_factory: Callable[[], Session]) -> int:
