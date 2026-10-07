@@ -18,6 +18,8 @@ from app.models import (
 from app.routers.ads import click_signature
 
 SERVE = "/api/v1/ad/serve"
+# Страница сайта партнёра: браузер ставит Origin, когда виджет на ней запрашивает рекламу
+PAGE = {"Origin": "https://blog.example.com"}
 CAMPAIGNS = "/api/v1/campaigns"
 BACKEND = Path(__file__).resolve().parent.parent
 
@@ -48,7 +50,7 @@ def _campaign(db, user, placement=None, bid=None, title="Акция", **kw):
 
 
 def _serve(client, code):
-    return client.get(SERVE, params={"placement_code": code})
+    return client.get(SERVE, params={"placement_code": code}, headers=PAGE)
 
 
 def _headers(user):

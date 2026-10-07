@@ -257,6 +257,9 @@ MESSAGES: tuple[dict[str, str], ...] = (
        "Das Gebot liegt unter dem Klickpreis der Werbefläche ({price})"),
 
     # ---------- Партнёрская программа ----------
+    _m("Эта площадка работает только на сайте партнёра, для которого создана",
+       "This placement only works on the partner site it was created for",
+       "Diese Werbefläche funktioniert nur auf der Partner-Website, für die sie angelegt wurde"),
     _m("Этот сайт уже добавлен в партнёрскую программу",
        "This site has already been added to the partner program",
        "Diese Website ist bereits im Partnerprogramm"),

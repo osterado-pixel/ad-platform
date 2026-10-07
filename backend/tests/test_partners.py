@@ -16,6 +16,8 @@ from app.services import partners
 P = "/api/v1/partner"
 A = "/api/v1/admin/partner"
 SERVE = "/api/v1/ad/serve"
+# Страница сайта партнёра: браузер ставит Origin, когда виджет на ней запрашивает рекламу
+PAGE = {"Origin": "https://blog.example.com"}
 DAY = 24 * 3600
 
 
@@ -142,15 +144,15 @@ def test_ads_shown_only_on_approved_sites(client, db, auth_headers, publisher, a
                     target_url="https://shop.example.com", status=CampaignStatus.ACTIVE))
     db.commit()
     code = {"placement_code": pl["code_identifier"]}
-    assert client.get(SERVE, params=code).status_code == 404  # сайт ещё на проверке
+    assert client.get(SERVE, params=code, headers=PAGE).status_code == 404  # сайт ещё на проверке
 
     _approve(client, auth_headers, site["id"])
-    assert client.get(SERVE, params=code).status_code == 200
+    assert client.get(SERVE, params=code, headers=PAGE).status_code == 200
 
     r = client.post(f"{A}/sites/{site['id']}/moderate", json={"status": "blocked", "reason": "Накрутка"},
                     headers=auth_headers)
     assert r.json()["rejection_reason"] == "Накрутка"
-    assert client.get(SERVE, params=code).status_code == 404
+    assert client.get(SERVE, params=code, headers=PAGE).status_code == 404
     # Клик по уже показанному баннеру заблокированного сайта не оплачивается
     c = db.scalar(select(Campaign))
     assert client.get(f"/api/v1/ad/click/{c.id}", follow_redirects=False).status_code == 404
@@ -186,7 +188,7 @@ def test_click_on_partner_site_shares_revenue(client, db, live, publisher, adver
     site, _, c = live
     pub, pub_h = publisher
     adv, _ = advertiser
-    client.get(SERVE, params={"placement_code": live[1]["code_identifier"]})
+    client.get(SERVE, params={"placement_code": live[1]["code_identifier"]}, headers=PAGE)
     _click(client, c.id)
 
     db.refresh(adv)
@@ -379,3 +381,50 @@ def test_site_model_effective_share(db, monkeypatch):
     assert Site(revenue_share=Decimal("0.75")).effective_share == Decimal("0.75")
     assert partners.share_of(Decimal("0.03"), None) == Decimal("0.01")
     assert SiteStatus.APPROVED.value == "approved"
+
+
+# ---------- Площадка работает только на сайте партнёра ----------
+@pytest.mark.parametrize("headers, ok", [
+    ({"Origin": "https://blog.example.com"}, True),
+    ({"Origin": "https://news.blog.example.com"}, True),                 # поддомен сайта
+    ({"Origin": "https://www.blog.example.com"}, True),
+    ({"Referer": "http://testserver/demo?placement=x"}, True),           # «Демо» на самой платформе
+    ({"Origin": "https://evil.example.com"}, False),                      # чужой сайт
+    ({"Origin": "https://blog.example.com.evil.com"}, False),             # не поддомен, а чужой домен
+    ({"Origin": "https://notblog.example.com"}, False),
+    ({"Origin": "null"}, False),                                          # песочница / file://
+    ({}, False),                                                          # не из браузера
+])
+def test_partner_placement_only_on_its_site(client, live, headers, ok):
+    _, pl, _ = live
+    r = client.get(SERVE, params={"placement_code": pl["code_identifier"]}, headers=headers)
+    assert r.status_code == (200 if ok else 403)
+
+
+def test_origin_wins_over_referer(client, live):
+    _, pl, _ = live
+    r = client.get(SERVE, params={"placement_code": pl["code_identifier"]},
+                   headers={"Origin": "https://evil.example.com", "Referer": "https://blog.example.com/"})
+    assert r.status_code == 403
+
+
+def test_platform_public_url_counts_as_own(client, live, monkeypatch):
+    _, pl, _ = live
+    monkeypatch.setattr(settings, "public_url", "https://ads.example.com")
+    r = client.get(SERVE, params={"placement_code": pl["code_identifier"]},
+                   headers={"Origin": "https://ads.example.com"})
+    assert r.status_code == 200
+
+
+def test_platform_placements_work_anywhere(client, db):
+    from app.models import Placement
+    adv = User(email="a@example.com", hashed_password="x", balance=Decimal("5"))
+    pl = Placement(name="Шапка", code_identifier="header", price_per_click=Decimal("1"))
+    db.add_all([adv, pl])
+    db.commit()
+    db.add(Campaign(user_id=adv.id, placement_id=pl.id, title="A", target_url="https://a.example.com",
+                    status=CampaignStatus.ACTIVE))
+    db.commit()
+    assert client.get(SERVE, params={"placement_code": "header"}).status_code == 200
+    assert client.get(SERVE, params={"placement_code": "header"},
+                      headers={"Origin": "https://anything.example.org"}).status_code == 200

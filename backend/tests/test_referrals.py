@@ -93,7 +93,8 @@ def network(db):
 
 
 def _click(client, code):
-    url = client.get("/api/v1/ad/serve", params={"placement_code": code}).json()["click_url"]
+    url = client.get("/api/v1/ad/serve", params={"placement_code": code},
+                     headers={"Origin": "https://blog.example.com"}).json()["click_url"]
     assert client.get(url, follow_redirects=False).status_code == 302
 
 

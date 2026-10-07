@@ -5,6 +5,7 @@ import re
 import time
 from dataclasses import dataclass
 from decimal import Decimal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -65,11 +66,36 @@ def _live_placement():
     """Площадка, на которой можно показывать рекламу: активна и (если это сайт партнёра) сайт одобрен."""
     return (
         select(Placement.id, Placement.site_id, Placement.price_per_click.label("floor"),
-               Site.user_id.label("publisher_id"), Site.revenue_share)
+               Site.user_id.label("publisher_id"), Site.revenue_share, Site.domain.label("site_domain"))
         .outerjoin(Placement.site)
         .where(Placement.is_active.is_(True),
                or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED))
     )
+
+
+def _page_host(request: Request) -> str | None:
+    """Хост страницы, с которой виджет запросил рекламу. Браузер сам ставит Origin (запрос с другого
+    сайта) или Referer (с той же страницы платформы, например /demo); скрипт на странице их не подменит."""
+    for header in ("origin", "referer"):
+        value = request.headers.get(header)
+        if value and value != "null":
+            host = urlsplit(value).hostname
+            if host:
+                return host.lower().rstrip(".")
+    return None
+
+
+def _allowed_on_page(request: Request, site_domain: str) -> bool:
+    """Площадка партнёра работает только на его сайте (и поддоменах) и на страницах самой платформы
+    (кнопка «Демо» в кабинете). Иначе чужой код площадки на постороннем сайте приносил бы доход
+    партнёру за трафик, который он не приводил, а рекламодатель платил бы за показ не там, где ждал."""
+    host = _page_host(request)
+    if host is None:
+        return False
+    own = {(request.url.hostname or "").lower()}
+    if settings.public_url:
+        own.add((urlsplit(settings.public_url).hostname or "").lower())
+    return host in own or host == site_domain or host.endswith("." + site_domain)
 
 
 def click_signature(campaign_id: int, placement_id: int) -> str:
@@ -112,6 +138,12 @@ def serve_ad(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Рекламная площадка не найдена или деактивирована",
+            headers=NO_STORE,
+        )
+    if placement.site_id is not None and not _allowed_on_page(request, placement.site_domain):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Эта площадка работает только на сайте партнёра, для которого создана",
             headers=NO_STORE,
         )
 
