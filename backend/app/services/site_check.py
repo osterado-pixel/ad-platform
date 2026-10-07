@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Callable
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy import select
@@ -51,24 +51,43 @@ class Page:
     text: str
 
 
-def _is_public_host(host: str) -> bool:
-    """Все IP-адреса хоста — публичные (не локальные, не частные, не служебные)."""
+def _public_ip(host: str) -> str | None:
+    """IP-адрес хоста, если ВСЕ его адреса публичные (не локальные, не частные, не служебные); иначе None."""
     try:
         infos = socket.getaddrinfo(host, None)
     except (socket.gaierror, UnicodeError):
-        return False
-    addresses = {info[4][0] for info in infos}
-    return bool(addresses) and all(ipaddress.ip_address(a.split("%")[0]).is_global for a in addresses)
+        return None
+    addresses = sorted({info[4][0].split("%")[0] for info in infos})
+    if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
+        return None
+    return next((a for a in addresses if ":" not in a), addresses[0])  # IPv4, если есть
 
 
-def _check_url(url: str) -> None:
+def _check_url(url: str) -> str:
+    """Проверяет адрес и возвращает проверенный IP, к которому и подключаться."""
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise FetchError("адрес не http/https")
     if parts.port not in (None, 80, 443):
         raise FetchError("нестандартный порт")
-    if not _is_public_host(parts.hostname):
+    ip = _public_ip(parts.hostname)
+    if ip is None:
         raise FetchError("адрес не найден или не публичный")
+    return ip
+
+
+def _pinned(url: str, ip: str) -> tuple[str, dict, dict]:
+    """Запрос к уже проверенному IP (а не к имени, которое DNS при подключении мог бы разрешить
+    иначе — «DNS rebinding»: сначала публичный адрес, потом 169.254.169.254). Имя сайта — в Host
+    и в TLS (SNI): сервер отдаёт нужный сайт, сертификат проверяется по имени."""
+    parts = urlsplit(url)
+    host = parts.hostname
+    netloc = f"[{ip}]" if ":" in ip else ip
+    if parts.port:
+        netloc += f":{parts.port}"
+    target = urlunsplit((parts.scheme, netloc, parts.path or "/", parts.query, ""))
+    extensions = {"sni_hostname": host} if parts.scheme == "https" else {}
+    return target, {"Host": parts.netloc.rsplit("@", 1)[-1]}, extensions
 
 
 class _TextExtractor(HTMLParser):
@@ -117,9 +136,9 @@ def fetch_page(url: str, domain: str, transport: httpx.BaseTransport | None = No
     with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, transport=transport,
                       headers={"User-Agent": USER_AGENT, "Accept": "text/html"}) as client:
         for _ in range(MAX_REDIRECTS + 1):
-            _check_url(url)
+            target, headers, extensions = _pinned(url, _check_url(url))
             try:
-                with client.stream("GET", url) as response:
+                with client.stream("GET", target, headers=headers, extensions=extensions) as response:
                     if response.is_redirect:
                         url = urljoin(url, response.headers.get("location", ""))
                         continue

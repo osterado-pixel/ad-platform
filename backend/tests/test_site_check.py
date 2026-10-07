@@ -38,7 +38,12 @@ def fake_dns(monkeypatch):
 def transport(routes: dict):
     """routes: url → (status, headers, body). Запросы на другие адреса — ошибка теста."""
     def handler(request: httpx.Request):
-        key = str(request.url)
+        # Запрос идёт к проверенному IP, имя сайта — в Host: восстанавливаем адрес для таблицы ответов
+        host = request.headers["host"]
+        assert request.url.host == PUBLIC[host.split(":")[0]], "подключение не к проверенному IP"
+        if request.url.scheme == "https":
+            assert request.extensions.get("sni_hostname") == host.split(":")[0]
+        key = f"{request.url.scheme}://{host}{request.url.raw_path.decode()}"
         assert key in routes, f"неожиданный запрос {key}"
         code, headers, body = routes[key]
         return httpx.Response(code, headers=headers, content=body.encode())
@@ -270,3 +275,32 @@ def test_retry_errors_soon(db, site, fake_ai, monkeypatch):
     assert calls == [site.id]
     monkeypatch.setattr(settings, "site_auto_check", False)
     assert site_check.retry_errors(background_session_factory(db)) == 0
+
+
+def test_dns_rebinding_blocked(monkeypatch):
+    """Имя сначала разрешается в публичный адрес, при повторном запросе — во внутренний.
+    Подключение идёт к адресу из проверки: второго разрешения имени нет вовсе."""
+    answers = iter(["93.184.216.34", "169.254.169.254"])
+    calls = []
+
+    def rebinding(host, *args, **kw):
+        calls.append(host)
+        ip = next(answers)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+    monkeypatch.setattr(socket, "getaddrinfo", rebinding)
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.host)
+        return httpx.Response(200, headers=HTML, content=PAGE.encode())
+    page = fetch_page("https://rebind.example.com/", "rebind.example.com", httpx.MockTransport(handler))
+    assert seen == ["93.184.216.34"] and calls == ["rebind.example.com"]
+    assert page.title == "Блог о путешествиях"
+
+
+def test_mixed_public_and_private_addresses_blocked(monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **kw: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 0))])
+    with pytest.raises(FetchError, match="не публичный"):
+        fetch_page("https://mixed.example.com/", "mixed.example.com", transport({}))
