@@ -68,9 +68,11 @@ def gemini(monkeypatch):
         error = None
         during = None  # колбэк «пока модель думает»
         calls = []
+        languages = []  # язык объявлений каждого вызова
 
-    def generate_ad(product_description, target_audience):
+    def generate_ad(product_description, target_audience, language="ru"):
         State.calls.append((product_description, target_audience))
+        State.languages.append(language)
         if State.during:
             State.during()
         if State.error:

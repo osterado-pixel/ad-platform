@@ -144,7 +144,7 @@ def mock_gemini(monkeypatch):
     По умолчанию — успешный ответ (3 варианта, себестоимость $0.004). В тесте можно поменять:
         mock_gemini.return_value = {...}             # другой ответ
         mock_gemini.side_effect = AIUnavailable(...)  # ошибка Gemini
-        mock_gemini.assert_called_once_with(описание, аудитория)
+        mock_gemini.assert_called_once_with(описание, аудитория, язык)
     """
     from decimal import Decimal
     from unittest import mock

@@ -45,6 +45,29 @@ _RULES = [
     (r"\b(куп|прода|сдела|изготов)\w*\s+(\w+\s+)?(диплом|аттестат|паспорт|удостоверени|водительск\w*\s+прав)\w*",
      "поддельные документы"),
     (r"\b(фальшив|поддельн)\w*\s+(деньг|купюр|банкнот|документ|паспорт|диплом)\w*", "подделки"),
+
+    # --- English --- (узко, как и русские: «interest rates», «tape measure», «diploma frame» проходят)
+    (r"\bsports?\s*betting\b|\bbetting\s+(tips|odds|sites?)\b|\bbookmakers?\b|\bslot\s+machines?\b"
+     r"|\bonline\s+(roulette|gambling|poker\s+for\s+(real\s+)?money)\b", "азартные игры"),
+    (r"\b(ponzi|pyramid)\s+schemes?\b", "финансовая пирамида"),
+    (r"\b(earn|make)\s+(money|cash|\$\s?\d[\d,]*)\s+(\w+\s+){0,3}without\s+(any\s+)?investment"
+     r"|\bno\s+investment\s+(needed|required)\b", "обещание заработка без вложений"),
+    (r"\bguaranteed\s+(income|profits?|returns?|earnings)\b", "гарантированный доход"),
+    # Только buy: «get your driver's license» — автошкола, «order a passport» — оформление через госуслуги
+    (r"\bbuy\s+(an?\s+|your\s+)?(real\s+|fake\s+)?"
+     r"(diploma|degree\s+certificate|passport|driver'?s\s+licen[cs]e)s?\b(?!\s+(frames?|holders?|covers?|cases?))",
+     "поддельные документы"),
+    (r"\b(counterfeit|fake)\s+(money|banknotes?|bills|documents?|ids?|passports?)\b", "подделки"),
+
+    # --- Deutsch ---
+    (r"\bkasinos?\b|\bsportwetten\b|\bwettanbieter\w*|\bbuchmacher\w*|\bspielautomat\w*", "азартные игры"),
+    (r"\b(schneeball|pyramiden)system\w*", "финансовая пирамида"),
+    (r"\bgeld\s+verdienen\s+ohne\s+(investition|einsatz|startkapital|kapital)\w*"
+     r"|\bohne\s+(investition|startkapital)\s+(\w+\s+){0,2}verdienen\b", "обещание заработка без вложений"),
+    (r"\bgarantiert\w*\s+(einkommen|gewinn\w*|rendite\w*|verdienst\w*)", "гарантированный доход"),
+    (r"\b(diplom|ausweis|reisepass|führerschein)e?\s+kaufen\b"
+     r"|\b(kaufen|bestellen)\s+(sie\s+)?(ein\w*\s+)?(diplom|ausweis|reisepass|führerschein)\b", "поддельные документы"),
+    (r"\bfalschgeld\b|\bgefälscht\w*\s+(dokument|ausweis|pass|geld|führerschein)\w*", "подделки"),
 ]
 FORBIDDEN_PATTERNS = [pattern for pattern, _ in _RULES]  # имя из инструкции
 _COMPILED = [(re.compile(pattern), reason) for pattern, reason in _RULES]

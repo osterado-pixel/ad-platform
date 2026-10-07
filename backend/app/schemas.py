@@ -7,6 +7,7 @@ from pydantic import (
     UrlConstraints, field_validator, model_validator,
 )
 
+from app.i18n import Language
 from app.models import CampaignStatus, TransactionType, UserRole
 
 
@@ -377,6 +378,7 @@ class AdGenerateRequest(BaseModel):
 
     product_description: str = Field(min_length=10, max_length=2000)
     target_audience: str = Field(default="Общая аудитория", min_length=1, max_length=300)
+    language: Language = Field(default="ru", description="Язык объявлений: ru, en, de")
 
     @field_validator("product_description", "target_audience")
     @classmethod

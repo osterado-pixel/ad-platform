@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.ai import AIUnavailable
 from app.database import SessionLocal, write_lock
+from app.i18n import DEFAULT_LANGUAGE
 from app.models import AITask, AITaskStatus, Transaction
 from app.services import ai_billing, gemini_service
 from app.services.moderation_service import ContentRejected, moderate_text_sync
@@ -66,6 +67,7 @@ def run_gemini_generation_task(
     user_id: int,
     product_description: str,
     target_audience: str,
+    language: str = DEFAULT_LANGUAGE,
     session_factory: Callable[[], Session] = SessionLocal,
 ) -> None:
     """Фоновая задача, выполняющаяся независимо от HTTP-запроса."""
@@ -91,7 +93,7 @@ def run_gemini_generation_task(
                     db.execute(update(AITask).where(AITask.id == task_id).values(transaction_id=transaction_id))
                 hold = ai_billing.reserve(db, user_id, link=link)
 
-            res = gemini_service.generate_ad(product_description, target_audience)
+            res = gemini_service.generate_ad(product_description, target_audience, language)
         except ContentRejected as e:
             _fail(db, task_id, hold, e.detail)
         except ai_billing.InsufficientFunds as e:

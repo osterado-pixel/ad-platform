@@ -137,7 +137,7 @@ def test_bot_generate(client, test_user, user_headers, bot_on, mock_gemini, db):
     # TestClient выполняет фоновую задачу сразу после ответа
     t = client.get(f"/api/v1/bot/tasks/{task_id}?telegram_id={TG}", headers=BOT).json()
     assert t["status"] == "completed" and t["result"] == GEMINI_VARIANTS
-    mock_gemini.assert_called_once_with("Онлайн-курс Python с нуля", "новички")
+    mock_gemini.assert_called_once_with("Онлайн-курс Python с нуля", "новички", "ru")
     db.expire_all()
     assert db.get(User, test_user.id).balance == Decimal("9.99")  # та же оплата, что у сайта
 

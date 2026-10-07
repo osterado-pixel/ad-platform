@@ -18,7 +18,7 @@ def test_mock_gemini_success(client, test_user, user_headers, mock_gemini):
     r = client.post(URL, json=BODY, headers=user_headers)
     assert r.status_code == 200 and r.json()["data"] == GEMINI_VARIANTS
     assert r.json()["billing"]["remaining_balance"] == 9.99
-    mock_gemini.assert_called_once_with(BODY["product_description"], BODY["target_audience"])
+    mock_gemini.assert_called_once_with(BODY["product_description"], BODY["target_audience"], "ru")
 
 
 def test_mock_gemini_error(client, test_user, user_headers, mock_gemini):

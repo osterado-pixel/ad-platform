@@ -14,8 +14,9 @@ from pydantic import ValidationError
 from app import ai
 from app.ai import AIUnavailable, ContentRefused
 from app.config import settings
+from app.i18n import DEFAULT_LANGUAGE
 from app.services.gemini_service import (
-    MAX_PROMPT_TOKENS, SYSTEM_INSTRUCTION, VARIANTS_COUNT, AdVariants, _user_data,
+    MAX_PROMPT_TOKENS, VARIANTS_COUNT, AdVariants, _user_data, system_instruction,
 )
 
 log = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ def max_cost() -> Decimal:
     return calculate_cost(MAX_PROMPT_TOKENS, MAX_TOKENS)
 
 
-def generate_ad(product_description: str, target_audience: str) -> dict:
+def generate_ad(product_description: str, target_audience: str, language: str = DEFAULT_LANGUAGE) -> dict:
     """Варианты объявления от Claude в формате gemini_service.generate_ad. AIUnavailable — при сбое."""
     model = settings.claude_copy_model
     try:
@@ -69,7 +70,7 @@ def generate_ad(product_description: str, target_audience: str) -> dict:
         response = ai._get_client().messages.create(
             model=model,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_INSTRUCTION,
+            system=system_instruction(language),
             messages=[{"role": "user", "content": _user_data(product_description, target_audience)}],
             output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
         )

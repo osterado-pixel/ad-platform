@@ -63,7 +63,7 @@ def generate_ad_copy(
 
     # 2. Генерация — без открытой транзакции
     try:
-        result = gemini_service.generate_ad(request.product_description, request.target_audience)
+        result = gemini_service.generate_ad(request.product_description, request.target_audience, request.language)
     except AIUnavailable as e:
         _refund(db, hold)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -136,6 +136,7 @@ def queue_ad_generation(db: Session, user_id: int, request: AdGenerateRequest,
         user_id=user_id,
         product_description=request.product_description,
         target_audience=request.target_audience,
+        language=request.language,
         session_factory=background_session_factory(db),
     )
     return AITaskCreated(task_id=task_id, check_status_url=f"{status_url_prefix}/{task_id}", held_amount=hold.amount)
