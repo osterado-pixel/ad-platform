@@ -1,15 +1,49 @@
-venv/
-__pycache__/
-*.pyc
+# --- Секреты: в git только примеры (.env.example) ---
 .env
+.env.*
+!.env.example
+# Ключи, сертификаты, файлы учётных данных
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+secrets.json
+credentials.json
+# Сгенерированный ключ подписи токенов (app/config.py)
+backend/data/
+
+# --- Базы данных и резервные копии (персональные данные пользователей) ---
 *.db
 *.db.bak-*
 *.db-wal
 *.db-shm
-.pytest_cache/
-.venv/
+*.sqlite3
+*.dump
 backups/
-# Сгенерированный ключ подписи токенов (app/config.py)
-backend/data/
+
+# --- Python ---
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+
+# --- Node.js (frontend/.gitignore — правила Next.js) ---
+node_modules/
+
+# --- Журналы ---
+*.log
+
+# --- Личные локальные правки docker compose ---
+docker-compose.override.yml
+
+# --- Система и редакторы (.vscode — общие настройки проекта, в git) ---
+.DS_Store
+desktop.ini
+.idea/
