@@ -58,6 +58,15 @@ class UserCreate(BaseModel):
     ref: str | None = Field(default=None, max_length=64)
 
 
+class ForgotPassword(BaseModel):
+    email: NormalizedEmail
+
+
+class ResetPassword(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    new_password: Password
+
+
 class PasswordChange(BaseModel):
     current_password: str = Field(max_length=200)
     new_password: Password

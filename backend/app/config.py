@@ -119,6 +119,17 @@ class Settings(BaseSettings):
     # Адрес сайта для возврата после оплаты (https://ads.example.com); пусто — адрес из запроса
     public_url: str = ""
 
+    # Почта (восстановление пароля, app/services/mailer.py). SMTP_HOST пусто — письма не отправляются,
+    # а пишутся в журнал сервера (для проверки локально). Порт 465 — SMTPS, иначе STARTTLS
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""  # адрес отправителя; пусто — SMTP_USER
+    smtp_starttls: bool = True
+    # Сколько минут действует ссылка для смены пароля
+    password_reset_minutes: int = Field(default=30, ge=5, le=24 * 60)
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 

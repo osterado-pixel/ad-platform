@@ -622,3 +622,51 @@ def test_partner_program_in_ui(server, browser):
         admin.wait_for_selector("tr:has-text('Блог E2E')")
         admin.screenshot(path=str(Path(shots) / "admin_sites.png"), full_page=True)
     assert errors == [], errors
+
+
+def test_password_reset_in_ui(server, browser):
+    """Забыли пароль → письмо (SMTP на тестовом сервере не настроен — ссылку подставляем в базу,
+    как её создал бы сервер) → новый пароль по ссылке → вход с новым паролем."""
+    import hashlib
+    import hmac
+    from datetime import datetime, timedelta, timezone
+
+    import httpx2 as httpx
+    from sqlalchemy import create_engine, delete, insert, select
+
+    from app.models import PasswordResetToken, User
+
+    base, errors = server, []
+    httpx.post(base + "/api/v1/auth/register", json={"email": "forgot@e2e.ru", "password": PASSWORD})
+
+    page = new_page(browser, errors)
+    page.goto(base + "/app")
+    page.fill("#auth-email", "forgot@e2e.ru")
+    page.click("a:has-text('Забыли пароль?')")
+    assert page.input_value("#forgot-email") == "forgot@e2e.ru"  # email переносится из формы входа
+    page.click("button:has-text('Отправить ссылку')")
+    page.wait_for_selector(".notice:has-text('Если такой email зарегистрирован')")
+
+    token = "e2e-reset-token-0123456789abcdefghijklmn"
+    secret = "e2e-secret-key-0123456789abcdefghijklmnopq"  # SECRET_KEY тестового сервера
+    token_hash = hmac.new(secret.encode(), f"pw-reset:{token}".encode(), hashlib.sha256).hexdigest()
+    engine = create_engine(SERVER_DB["url"])
+    with engine.begin() as conn:
+        uid = conn.execute(select(User.id).where(User.email == "forgot@e2e.ru")).scalar_one()
+        conn.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == uid))
+        conn.execute(insert(PasswordResetToken).values(
+            user_id=uid, token_hash=token_hash, expires_at=datetime.now(timezone.utc) + timedelta(minutes=30)))
+    engine.dispose()
+
+    page.goto(f"{base}/app#/reset/{token}")
+    page.fill("#reset-password", "brand-new-password")
+    page.click("button:has-text('Сохранить и войти')")
+    page.wait_for_selector("h1:has-text('Обзор')")
+    assert "reset" not in page.url  # токен ушёл из адресной строки
+
+    page.click("button:has-text('Выйти')")
+    page.fill("#auth-email", "forgot@e2e.ru")
+    page.fill("#auth-password", "brand-new-password")
+    page.click("form button[type=submit]")
+    page.wait_for_selector("h1:has-text('Обзор')")
+    assert errors == [], errors

@@ -464,6 +464,18 @@ class TelegramLinkCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PasswordResetToken(Base):
+    """Одноразовая ссылка для смены пароля (из письма). Хранится HMAC от токена, а не сам токен:
+    утечка базы не даёт сменить чужой пароль. Одна действующая ссылка на пользователя."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Plan(Base):
     """Тариф: цена, срок и набор возможностей. Что даёт каждая возможность — app/services/entitlements.py."""
     __tablename__ = "plans"

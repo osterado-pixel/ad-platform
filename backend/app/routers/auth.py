@@ -1,8 +1,12 @@
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,8 +16,10 @@ from app.auth import (
 )
 from app.config import settings
 from app.database import get_db, write_lock
-from app.models import User
-from app.schemas import PasswordChange, Token, UserCreate, UserResponse
+from app.i18n import tr
+from app.models import PasswordResetToken, User
+from app.services import mailer
+from app.schemas import ForgotPassword, PasswordChange, ResetPassword, Token, UserCreate, UserResponse
 from app.services.partners import find_referrer
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Авторизация"])
@@ -91,3 +97,67 @@ def change_password(
         current_user.token_version += 1
         db.commit()
     return Token(access_token=create_access_token(current_user.id, token_version=current_user.token_version))
+
+
+# --- Восстановление пароля по email ---
+RESET_MAX_PER_EMAIL_PER_HOUR = 3
+RESET_MAX_PER_IP_PER_HOUR = 10
+RESET_SENT = "Если такой email зарегистрирован, мы отправили на него ссылку для смены пароля"
+RESET_INVALID = "Ссылка для смены пароля недействительна или устарела — запросите новую"
+
+
+def _reset_hash(token: str) -> str:
+    return hmac.new(settings.secret_key.encode(), f"pw-reset:{token}".encode(), hashlib.sha256).hexdigest()
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(data: ForgotPassword, request: Request, background: BackgroundTasks,
+                    db: Session = Depends(get_db)):
+    """Письмо со ссылкой для смены пароля. Ответ одинаковый, есть такой email или нет:
+    по нему нельзя узнать, кто зарегистрирован. Прежняя ссылка перестаёт действовать."""
+    ip = ratelimit.client_ip(request)
+    ratelimit.check(db, "reset_ip", ip, RESET_MAX_PER_IP_PER_HOUR, 3600,
+                    "Слишком много запросов на смену пароля с вашего адреса.")
+    ratelimit.check(db, "reset_email", data.email, RESET_MAX_PER_EMAIL_PER_HOUR, 3600,
+                    "Слишком много запросов на смену пароля для этого email.")
+    ratelimit.record(db, ("reset_ip", ip), ("reset_email", data.email))
+
+    user = db.scalar(select(User).where(User.email == data.email))
+    if user is not None:
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_minutes)
+        with write_lock():
+            db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+            db.add(PasswordResetToken(user_id=user.id, token_hash=_reset_hash(token), expires_at=expires_at))
+            db.commit()
+        base = settings.public_url.rstrip("/") or str(request.base_url).rstrip("/")
+        # Токен — после #: часть адреса после # браузер не отправляет на сервер (и в журналы прокси)
+        link = f"{base}/app#/reset/{token}"
+        # Текст — на языке запроса; собираем сейчас: фоновая задача выполняется после ответа
+        subject = tr("Смена пароля в Ad Platform")
+        body = tr("Чтобы задать новый пароль, откройте ссылку (действует {minutes} мин.):",
+                  minutes=settings.password_reset_minutes) + f"\n\n{link}\n\n" + tr(
+            "Если вы не запрашивали смену пароля, просто проигнорируйте это письмо.")
+        background.add_task(mailer.send_email, user.email, subject, body)
+    return {"detail": tr(RESET_SENT)}
+
+
+@router.post("/reset-password", response_model=Token)
+def reset_password(data: ResetPassword, db: Session = Depends(get_db)):
+    """Новый пароль по ссылке из письма. Все прежние сеансы завершаются; в ответе — токен для входа."""
+    row = db.scalar(select(PasswordResetToken).where(
+        PasswordResetToken.token_hash == _reset_hash(data.token),
+        PasswordResetToken.expires_at > datetime.now(timezone.utc)))
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_INVALID)
+    user = db.get(User, row.user_id)
+    with write_lock():
+        # Удаление — условием по id: две одновременные отправки одной ссылки не сменят пароль дважды
+        if not db.execute(delete(PasswordResetToken).where(PasswordResetToken.id == row.id)).rowcount:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_INVALID)
+        user.hashed_password = get_password_hash(data.new_password)
+        user.token_version += 1
+        db.commit()
+    ratelimit.clear(db, "login_email", user.email)  # владелец подтвердил почту — блокировка входа снята
+    return Token(access_token=create_access_token(user.id, token_version=user.token_version))

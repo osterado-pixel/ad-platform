@@ -331,8 +331,64 @@ function authView() {
   h("div", { class: "field" }, h("label", { for: "auth-email" }, t("auth.email")), email),
   h("div", { class: "field" }, h("label", { for: "auth-password" }, t("auth.password")), password,
     h("div", { class: "hint" }, t("auth.passwordHint"))),
-  submit);
+  submit,
+  h("p", { class: "small", style: "margin:12px 0 0;text-align:center" },
+    h("a", { href: "#", onclick: (e) => { e.preventDefault(); wrap.replaceWith(forgotView(email.value)); } },
+      t("auth.forgot"))));
 
+  const wrap = h("div", { class: "auth" }, h("span", { class: "brand" }, "Ad", h("span", {}, "Platform")), form,
+    h("div", { class: "auth-langs" }, langSwitcher()));
+  return wrap;
+}
+
+// Забыли пароль: письмо со ссылкой. Ответ сервера одинаковый, есть такой email или нет
+function forgotView(prefill = "") {
+  const email = h("input", { type: "email", required: true, autocomplete: "email", id: "forgot-email", value: prefill });
+  const submit = h("button", { class: "primary", type: "submit", style: "width:100%;justify-content:center" },
+    t("auth.sendLink"));
+  const result = h("div");
+  const back = h("a", { href: "#", onclick: (e) => { e.preventDefault(); wrap.replaceWith(authView()); } }, t("auth.back"));
+  const form = h("form", {
+    class: "card",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const r = await run(submit, () => api("POST", "/auth/forgot-password", { email: email.value }));
+      if (r) result.replaceChildren(h("div", { class: "notice info" }, r.detail));
+    },
+  },
+  h("h2", {}, t("auth.forgotTitle")),
+  h("p", { class: "small muted" }, t("auth.forgotHint")),
+  result,
+  h("div", { class: "field" }, h("label", { for: "forgot-email" }, t("auth.email")), email),
+  submit,
+  h("p", { class: "small", style: "margin:12px 0 0;text-align:center" }, back));
+  const wrap = h("div", { class: "auth" }, h("span", { class: "brand" }, "Ad", h("span", {}, "Platform")), form,
+    h("div", { class: "auth-langs" }, langSwitcher()));
+  return wrap;
+}
+
+// Новый пароль по ссылке из письма: /app#/reset/<токен>
+function resetView(token) {
+  const password = h("input", { type: "password", required: true, minLength: 8, autocomplete: "new-password", id: "reset-password" });
+  const submit = h("button", { class: "primary", type: "submit", style: "width:100%;justify-content:center" },
+    t("reset.submit"));
+  const form = h("form", {
+    class: "card",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const r = await run(submit, () => api("POST", "/auth/reset-password", { token, new_password: password.value },
+        { keepSession: true }), t("reset.done"));
+      if (r) {
+        writeToken(r.access_token);
+        state.me = null;
+        location.hash = "#/overview";  // ссылка с токеном уходит из адресной строки
+      }
+    },
+  },
+  h("h2", {}, t("reset.title")),
+  h("div", { class: "field" }, h("label", { for: "reset-password" }, t("reset.newPassword")), password,
+    h("div", { class: "hint" }, t("auth.passwordHint"))),
+  submit);
   return h("div", { class: "auth" }, h("span", { class: "brand" }, "Ad", h("span", {}, "Platform")), form,
     h("div", { class: "auth-langs" }, langSwitcher()));
 }
@@ -390,6 +446,12 @@ let renderSeq = 0;
 async function render() {
   const seq = ++renderSeq;
   const root = document.getElementById("app");
+  // Ссылка из письма — и для вошедшего пользователя (сменить пароль можно в любом случае)
+  const reset = location.hash.match(/^#\/reset\/([A-Za-z0-9_-]{10,200})$/);
+  if (reset) {
+    root.replaceChildren(resetView(reset[1]));
+    return;
+  }
   if (!state.token) {
     root.replaceChildren(authView());
     return;
