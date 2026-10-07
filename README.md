@@ -136,6 +136,14 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 сам передаёт эти пути бэкенду (`rewrites`, адрес — `BACKEND_URL` при сборке). Разработка — в
 [frontend/README.md](frontend/README.md).
 
+## Telegram-бот
+
+`bot/` — aiogram 3: баланс и AI-копирайтер в Telegram. Привязка без пароля: в кабинете
+(Профиль → Telegram) — одноразовый код на 10 минут и ссылка `t.me/<бот>?start=<код>`. Бот работает через
+`/api/v1/bot/*` с общим секретом `TELEGRAM_BOT_SECRET` (без него эти адреса — 404) и по тем же правилам,
+что сайт: модерация, лимит задач, заморозка и списание денег. Запуск — профиль `bot` в docker compose,
+нужен токен от @BotFather; подробно — [bot/README.md](bot/README.md).
+
 ## Как пользоваться
 
 1. **Админ → Площадки**: создайте рекламное место (код, цена клика) и скопируйте код вставки.
@@ -513,6 +521,7 @@ alembic upgrade head
 
 ```
 frontend/            сайт на Next.js: лендинг, AI-копирайтер (src/app, src/components, src/hooks, src/services)
+bot/                 Telegram-бот на aiogram: main.py, handlers/, api_client.py (→ /api/v1/bot/*)
 backend/
   app/
     main.py          приложение, CORS, раздача интерфейса и виджета
@@ -526,7 +535,7 @@ backend/
     services/        billing.py — заморозка/списание/возврат (поверх ai_billing.py);
                      gemini_service.py — AI-копирайтер (Gemini), claude_copywriter.py — его резерв (Claude);
                      moderation_service.py — быстрая модерация текста; ai_background.py, ai_cleanup.py — фоновые задачи
-    routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai
+    routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai, telegram
     static/          widget.js, demo.html, ui/ (веб-интерфейс)
     cli.py           команды администратора
   migrations/        миграции Alembic

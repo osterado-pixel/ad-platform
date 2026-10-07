@@ -68,6 +68,9 @@ services:
       AI_CLEANUP_INTERVAL_SECONDS: ${AI_CLEANUP_INTERVAL_SECONDS:-300}
       AI_TASK_TIMEOUT_MINUTES: ${AI_TASK_TIMEOUT_MINUTES:-10}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Telegram-бот: общий секрет бота и API (≥ 32 символов) и имя бота для ссылки привязки
+      TELEGRAM_BOT_SECRET: ${TELEGRAM_BOT_SECRET:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
     ports:
@@ -89,6 +92,22 @@ services:
     container_name: ad_platform_frontend
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  bot:
+    # Telegram-бот. Профиль bot: запускается только явно, когда есть токен от @BotFather:
+    #   docker compose --profile bot up -d --build
+    build: ./bot
+    container_name: ad_platform_bot
+    profiles: ["bot"]
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      TELEGRAM_BOT_SECRET: ${TELEGRAM_BOT_SECRET:-}
+      API_URL: http://api:8000
+      SITE_URL: ${SITE_URL:-}
     depends_on:
       api:
         condition: service_healthy

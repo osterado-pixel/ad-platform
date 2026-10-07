@@ -21,7 +21,7 @@ concurrency:
 # останавливает задачу — до публикации образа дело не дойдёт.
 jobs:
   ci:
-    name: Тесты, браузер, сайт, Docker, публикация
+    name: Тесты, браузер, сайт, бот, Docker, публикация
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -103,6 +103,14 @@ jobs:
           path: /tmp/adp_e2e_failures/
           if-no-files-found: ignore
 
+      # --- Telegram-бот: тесты (отдельное окружение — свои зависимости) ---
+      - name: Тесты Telegram-бота
+        working-directory: bot
+        run: |
+          python -m venv /tmp/botvenv
+          /tmp/botvenv/bin/pip install -q -r requirements-dev.txt
+          /tmp/botvenv/bin/python -m pytest -q
+
       # --- Сайт (Next.js): зависимости, проверка кода, сборка ---
       - name: Установка Node.js
         uses: actions/setup-node@v4
@@ -157,6 +165,17 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
+      - name: Проверка сборки образа бота
+        uses: docker/build-push-action@v5
+        with:
+          context: bot
+          file: bot/Dockerfile
+          push: false
+          load: true
+          tags: ad-platform-bot:test
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,mode=max,scope=bot
+
       - name: Собранный образ запускается и отвечает
         working-directory: .
         run: |
@@ -181,6 +200,14 @@ jobs:
           done
           docker logs frontend
           exit 1
+
+      - name: Образ бота запускается (без токена — понятная ошибка, а не падение)
+        working-directory: .
+        run: |
+          docker run --rm --entrypoint python ad-platform-bot:test -c "import main"
+          out=$(docker run --rm ad-platform-bot:test 2>&1 || true)
+          echo "$out"
+          echo "$out" | grep -q "BOT_TOKEN"
 
       # --- 5. ПУБЛИКАЦИЯ В GITHUB CONTAINER REGISTRY (ghcr.io) ---
       # Только при push в main; до этих шагов дойдёт лишь при успехе всех проверок выше
@@ -234,3 +261,24 @@ jobs:
           tags: ${{ steps.meta_frontend.outputs.tags }}
           labels: ${{ steps.meta_frontend.outputs.labels }}
           cache-from: type=gha,scope=frontend
+
+      - name: Метаданные образа бота
+        if: env.PUBLISH == 'true'
+        id: meta_bot
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-bot
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Сборка и push образа бота
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: bot
+          file: bot/Dockerfile
+          push: true
+          tags: ${{ steps.meta_bot.outputs.tags }}
+          labels: ${{ steps.meta_bot.outputs.labels }}
+          cache-from: type=gha,scope=bot
