@@ -133,7 +133,11 @@ jobs:
 
       - name: Скрипты сервера (deploy/*.sh) — проверка shellcheck
         working-directory: .
-        run: shellcheck -S warning deploy/*.sh
+        run: shellcheck -S warning deploy/*.sh deploy/tests/*.sh
+
+      - name: Выпуск на сервер — сценарии отката (подставной docker)
+        working-directory: .
+        run: bash deploy/tests/test_deploy.sh
 
       # --- 4. Docker: конфигурации, сборка, запуск собранного образа ---
       - name: Конфигурация docker compose корректна

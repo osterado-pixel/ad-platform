@@ -4,11 +4,14 @@
 #   /opt/ad-platform/deploy/deploy.sh sha-1a2b3c4     # тег образа из ghcr.io (CI публикует sha-<коммит> и latest)
 #
 # 1. Копия базы (deploy/backup.sh) — до обновления.
-# 2. Новые образы, перезапуск (миграции база применяет сама при старте api).
-# 3. Проверка: контейнер api «healthy» и /api/v1/health отвечает. Нет — АВТООТКАТ на прошлый тег.
+# 2. Работающие сейчас образы сохраняются под тегом pre-deploy — откат возможен, даже если тег
+#    прошлой версии (например, latest) уже указывает на новую, сломанную сборку.
+# 3. Новые образы, перезапуск (миграции база применяет сама при старте api).
+# 4. Проверка: контейнер api «healthy» и /api/v1/health отвечает.
+# Любой сбой шагов 3–4 (образ не скачался, не запустился, не прошёл проверку) — АВТООТКАТ на pre-deploy.
 #
-# Текущий тег — в .env (IMAGE_TAG), прошлый — в .deploy-previous-tag. Откат возвращает код, но не схему БД:
-# миграции в проекте только добавляют таблицы и колонки, прежняя версия с новой схемой работает.
+# Откат возвращает код, но не схему БД: миграции в проекте только добавляют таблицы и колонки,
+# прежняя версия с новой схемой работает.
 set -euo pipefail
 
 TAG="${1:?Укажите тег образа: deploy.sh sha-1a2b3c4}"
@@ -18,6 +21,9 @@ COMPOSE=(docker compose -f docker-compose.prod.yml)
 [ -f docker-compose.https.yml ] && [ -n "$(grep -E '^DOMAIN=.+' .env 2>/dev/null || true)" ] \
   && COMPOSE+=(-f docker-compose.https.yml)
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
+ROLLBACK_TAG=pre-deploy
+# Сервисы с нашими образами (у всех один IMAGE_TAG); db, redis, caddy — сторонние образы
+APP_SERVICES=(api celery_worker frontend bot)
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
@@ -44,32 +50,54 @@ healthy() {
   return 1
 }
 
+# Сохранить работающие образы под тегом pre-deploy. Возвращает 0, если есть к чему откатываться
+save_running_images() {
+  local service container image repo saved=1
+  for service in "${APP_SERVICES[@]}"; do
+    container="$("${COMPOSE[@]}" ps -q "$service" 2>/dev/null | head -1)"
+    [ -n "$container" ] || continue
+    image="$(docker inspect -f '{{.Image}}' "$container")"            # ID образа, а не тег
+    repo="$(docker inspect -f '{{.Config.Image}}' "$container")"      # ghcr.io/…/ad-platform:тег
+    docker tag "$image" "${repo%:*}:$ROLLBACK_TAG"
+    saved=0
+  done
+  return $saved
+}
+
+release() {
+  "${COMPOSE[@]}" pull --quiet && "${COMPOSE[@]}" up -d --remove-orphans && healthy
+}
+
 previous="$(grep '^IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 || true)"
-previous="${previous:-latest}"
-log "Выпуск $TAG (сейчас: $previous)"
+log "Выпуск $TAG (сейчас: ${previous:-не задан})"
 
 if docker ps --format '{{.Names}}' | grep -qx prod_ad_platform_db; then
   ./deploy/backup.sh || { rc=$?; [ $rc -eq 2 ] || { log "Копия базы не создана — выпуск отменён"; exit 1; }; }
 fi
 
-set_tag "$TAG"
-"${COMPOSE[@]}" pull --quiet
-"${COMPOSE[@]}" up -d --remove-orphans
+can_rollback=0
+save_running_images && can_rollback=1
 
-if healthy; then
-  echo "$previous" > .deploy-previous-tag
-  docker image prune -f > /dev/null   # старые образы не копятся на диске
+set_tag "$TAG"
+if release; then
+  echo "${previous:-}" > .deploy-previous-tag
+  docker image prune -f > /dev/null   # старые образы не копятся (pre-deploy остаётся — он с тегом)
   log "Готово: работает $TAG"
   exit 0
 fi
 
-log "ОШИБКА: $TAG не прошёл проверку — откат на $previous"
+log "ОШИБКА: $TAG не запустился или не прошёл проверку"
 "${COMPOSE[@]}" logs --tail=80 api || true
-set_tag "$previous"
-"${COMPOSE[@]}" pull --quiet || true
-"${COMPOSE[@]}" up -d --remove-orphans
-if healthy; then
-  log "Откат выполнен: работает $previous"
+if [ $can_rollback -eq 0 ]; then
+  set_tag "${previous:-latest}"
+  log "ВНИМАНИЕ: откатываться не к чему (первый запуск) — нужна ручная проверка"
+  exit 1
+fi
+log "Откат на образы, работавшие до выпуска ($ROLLBACK_TAG)"
+set_tag "$ROLLBACK_TAG"
+# Без pull: образы pre-deploy есть только локально
+if "${COMPOSE[@]}" up -d --remove-orphans && healthy; then
+  log "Откат выполнен: работает прежняя версия"
 else
   log "ВНИМАНИЕ: и прежняя версия не отвечает — нужна ручная проверка"
 fi
