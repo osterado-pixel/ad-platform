@@ -547,3 +547,78 @@ def test_cabinet_language_follows_browser_and_switcher(server, browser):
     page.click(".topbar .langs button:has-text('RU')")
     page.wait_for_selector("h1:has-text('Кошелёк')")
     assert errors == [], errors
+
+
+def _api_login(httpx, base, email):
+    token = httpx.post(base + "/api/v1/auth/login", data={"username": email, "password": PASSWORD}).json()
+    return {"Authorization": f"Bearer {token['access_token']}"}
+
+
+def test_partner_program_in_ui(server, browser):
+    """Партнёр приходит по реферальной ссылке, добавляет сайт и площадку; админ одобряет сайт;
+    клик по баннеру на сайте партнёра — заработок у партнёра и вознаграждение пригласившему."""
+    import httpx2 as httpx
+    base, errors = server, []
+    admin_h = _api_login(httpx, base, "admin@e2e.ru")
+    ref = httpx.get(base + "/api/v1/partner/referral", headers=admin_h).json()
+
+    # 1. Партнёр открывает реферальную ссылку: сразу форма регистрации
+    pub = new_page(browser, errors)
+    pub.goto(ref["link"])
+    pub.wait_for_selector(".tabs button.on:has-text('Регистрация')")
+    pub.fill("#auth-email", "pub@e2e.ru")
+    pub.fill("#auth-password", PASSWORD)
+    pub.click("form button[type=submit]")
+    pub.wait_for_selector("h1:has-text('Обзор')")
+    assert httpx.get(base + "/api/v1/partner/referral", headers=admin_h).json()["invited"] == ref["invited"] + 1
+
+    # 2. Сайт и площадка
+    pub.click("nav a:has-text('Партнёрам')")
+    pub.fill("input[placeholder='Название сайта']", "Блог E2E")
+    pub.fill("input[type=url]", "https://blog-e2e.example.com")
+    pub.click("button:has-text('Добавить сайт')")
+    pub.wait_for_selector(".badge:has-text('На проверке')")
+    pub.fill("input[placeholder='Например: баннер под статьёй']", "Под статьёй")
+    pub.click("button:has-text('Создать площадку')")
+    snippet = pub.locator("pre:has-text('data-placement=\"s')").first
+    snippet.wait_for()
+    code = snippet.inner_text().split('data-placement="')[1].split('"')[0]
+
+    # 3. Админ одобряет сайт
+    admin = new_page(browser, errors)
+    login(admin, base, "admin@e2e.ru")
+    admin.click("nav a:has-text('Сайты партнёров')")
+    admin.locator("tr", has_text="Блог E2E").locator("button:has-text('Одобрить')").click()
+    admin.wait_for_selector("text=Сайтов нет")
+
+    # 4. Рекламодатель (через API): кампания на всю сеть со ставкой 1.00, одобрена, баланс пополнен
+    httpx.post(base + "/api/v1/auth/register", json={"email": "net@e2e.ru", "password": PASSWORD})
+    adv_h = _api_login(httpx, base, "net@e2e.ru")
+    adv_id = httpx.get(base + "/api/v1/auth/me", headers=adv_h).json()["id"]
+    cid = httpx.post(base + "/api/v1/campaigns", headers=adv_h, json={
+        "title": "Сетевая E2E", "target_url": "https://example.com/net", "cpc_bid": 1}).json()["id"]
+    httpx.post(f"{base}/api/v1/campaigns/{cid}/submit", headers=adv_h)
+    httpx.patch(f"{base}/api/v1/campaigns/{cid}/moderate", headers=admin_h, json={"status": "active"})
+    httpx.post(f"{base}/api/v1/wallet/deposit?user_id={adv_id}", headers=admin_h, json={"amount": 10})
+
+    # 5. Посетитель сайта партнёра кликает по баннеру
+    visitor = new_page(browser, errors)
+    visitor.goto(f"{base}/demo?placement={code}")
+    banner = visitor.locator("a:has-text('Сетевая E2E')")
+    banner.wait_for()
+    with visitor.expect_popup() as popup:
+        banner.click()
+    popup.value.wait_for_load_state()
+
+    # 6. У партнёра — 60% от 1.00 «созревает», сайт одобрен
+    pub.reload()
+    pub.wait_for_selector(".badge:has-text('Одобрен')")
+    pub.wait_for_selector(".stat:has-text('Созревает') >> text=0,60")
+    shots = os.environ.get("E2E_SCREENSHOTS")
+    if shots:  # для просмотра страниц глазами: E2E_SCREENSHOTS=папка
+        pub.screenshot(path=str(Path(shots) / "partner.png"), full_page=True)
+        admin.click("nav a:has-text('Сайты партнёров')")
+        admin.click(".tabs button:has-text('Одобрен')")
+        admin.wait_for_selector("tr:has-text('Блог E2E')")
+        admin.screenshot(path=str(Path(shots) / "admin_sites.png"), full_page=True)
+    assert errors == [], errors

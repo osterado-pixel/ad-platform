@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app import schemas
-from app.models import CampaignStatus, TransactionType, UserRole
+from app.models import CampaignStatus, PartnerTxType, PayoutStatus, SiteStatus, TransactionType, UserRole
 
 UI = Path(__file__).resolve().parent.parent / "app" / "static" / "ui"
 SITE_CONFIG = Path(__file__).resolve().parents[2] / "frontend" / "src" / "i18n" / "config.ts"
@@ -114,6 +114,15 @@ def test_server_codes_have_translations():
         assert f"tx.{tx_type.value}" in keys
     for role in UserRole:
         assert f"role.{role.value}" in keys
+    # Партнёрская программа: статусы сайтов и выплат, операции заработка, способы выплаты
+    for site_status in SiteStatus:
+        assert f"sstatus.{site_status.value}" in keys
+    for payout_status in PayoutStatus:
+        assert f"pstatus.{payout_status.value}" in keys
+    for ptx in PartnerTxType:
+        assert f"ptx.{ptx.value}" in keys
+    for method in typing.get_args(schemas.PayoutMethod):
+        assert f"method.{method}" in keys
     # Literal[...] | None из карточки модерации → значения Literal
     fields = schemas.CampaignAdminResponse.model_fields
     verdicts = typing.get_args(typing.get_args(fields["ai_verdict"].annotation)[0])

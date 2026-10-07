@@ -145,6 +145,10 @@ textarea { min-height: 72px; resize: vertical; }
 .badge.moderation { background: var(--warn-soft); color: var(--warn); }
 .badge.rejected { background: var(--danger-soft); color: var(--danger); }
 .badge.paused { background: var(--accent-soft); color: var(--accent); }
+/* Сайты партнёров и выплаты */
+.badge.approved, .badge.paid { background: var(--ok-soft); color: var(--ok); }
+.badge.pending { background: var(--warn-soft); color: var(--warn); }
+.badge.blocked { background: var(--danger-soft); color: var(--danger); }
 .badge.count { background: var(--danger); color: #fff; }
 .notice { padding: 10px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
 .notice.warn { background: var(--warn-soft); color: var(--warn); }

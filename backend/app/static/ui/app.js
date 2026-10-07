@@ -202,8 +202,8 @@ function table(headers, rows, emptyText) {
       h("tbody", {}, rows)));
 }
 
-// Столбчатый график: показы (светлые) и клики (яркие) по дням
-function chart(days) {
+// Столбчатый график: показы (светлые) и клики (яркие) по дням. tipText(d) — подсказка столбца
+function chart(days, tipText) {
   if (!days.length) return h("div", { class: "empty" }, t("common.noData"));
   const W = 720, H = 200, top = 10, bottom = 22, left = 34;
   // Целые деления шкалы: при 3 показах — 0,1,2,3,4, а не 0,1,2,2,3 после округления
@@ -235,7 +235,8 @@ function chart(days) {
     const x = left + i * step + step / 2;
     const hi = (d.impressions / maxImp) * plotH;
     const hc = (d.clicks / maxClk) * plotH * 0.9;
-    const tip = t("chart.tip", { day: shortDay(d.day), impressions: int(d.impressions), clicks: int(d.clicks), spend: money(d.spend) });
+    const tip = tipText ? tipText(d)
+      : t("chart.tip", { day: shortDay(d.day), impressions: int(d.impressions), clicks: int(d.clicks), spend: money(d.spend) });
     s("rect", { x: x - bar, y: top + plotH - hi, width: bar, height: hi, class: "a" }).append(
       Object.assign(document.createElementNS(ns, "title"), { textContent: tip }));
     s("rect", { x: x, y: top + plotH - hc, width: bar, height: hc, class: "b" }).append(
@@ -365,8 +366,11 @@ const ROUTES = [
   { path: "#/overview", title: "nav.overview", view: overviewView },
   { path: "#/campaigns", title: "nav.campaigns", view: campaignsView },
   { path: "#/wallet", title: "nav.wallet", view: walletView },
+  { path: "#/partner", title: "nav.partner", view: partnerView },
   { path: "#/admin/moderation", title: "nav.moderation", view: moderationView, admin: true },
   { path: "#/admin/placements", title: "nav.placements", view: placementsView, admin: true },
+  { path: "#/admin/sites", title: "nav.sites", view: adminSitesView, admin: true },
+  { path: "#/admin/payouts", title: "nav.payouts", view: adminPayoutsView, admin: true },
   { path: "#/admin/users", title: "nav.users", view: usersView, admin: true },
   { path: "#/admin/platform", title: "nav.platform", view: platformView, admin: true },
 ];
@@ -1017,6 +1021,266 @@ async function placementsView() {
     h("div", { class: "card" },
       table([t("col.placement"), t("col.pricePerClick"), t("col.embed"), ""], rows, t("placements.empty"))));
   return wrap;
+}
+
+// ---------- Партнёрам: сайты, заработок, выплаты, рефералы ----------
+const PAYOUT_METHODS = ["paypal", "bank", "card", "crypto", "other"];
+const PTX_MINUS = new Set(["payout", "to_balance"]);  // уменьшают «доступно к выводу»
+const siteBadge = (s) => h("span", { class: `badge ${s}` }, known("sstatus", s));
+const payoutBadge = (s) => h("span", { class: `badge ${s}` }, known("pstatus", s));
+const percent = (share) => `${Math.round(Number(share) * 1000) / 10}%`;
+
+async function partnerView(days = 30) {
+  const [s, sites, ref, payouts] = await Promise.all([
+    api("GET", `/partner/summary?days=${days}`), api("GET", "/partner/sites"),
+    api("GET", "/partner/referral"), api("GET", "/partner/payouts?limit=50")]);
+  const wrap = h("div");
+  const reload = async (n = days) => { await refreshMe(); wrap.replaceWith(await partnerView(n)); };
+  const available = Number(s.earnings_balance);
+
+  // Вывод: перевод на рекламный баланс (сразу) или заявка на выплату (от минимальной суммы)
+  const tAmount = h("input", { type: "number", min: "0.01", step: "0.01", max: String(available), placeholder: t("common.amount") });
+  const tBtn = h("button", { type: "submit", disabled: available <= 0 }, t("partner.transfer"));
+  const transferForm = h("form", {
+    class: "stack",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      if (await run(tBtn, () => api("POST", "/partner/transfer", { amount: tAmount.value }), t("partner.transferred"))) reload();
+    },
+  }, h("h3", {}, t("partner.transferTitle")), h("div", { class: "hint" }, t("partner.transferHint")),
+  h("div", { class: "row" }, tAmount, tBtn));
+
+  const pAmount = h("input", { type: "number", min: String(s.payout_min_amount), step: "0.01", max: String(available),
+    placeholder: t("partner.min", { min: money(s.payout_min_amount) }) });
+  const pMethod = h("select", {}, PAYOUT_METHODS.map((m) => h("option", { value: m }, t(`method.${m}`))));
+  const pDetails = h("input", { required: true, maxLength: 500, placeholder: t("partner.detailsPlaceholder") });
+  const pBtn = h("button", { class: "primary", type: "submit", disabled: available < Number(s.payout_min_amount) },
+    t("partner.requestPayout"));
+  const payoutForm = h("form", {
+    class: "stack",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const body = { amount: pAmount.value, method: pMethod.value, details: pDetails.value.trim() };
+      if (await run(pBtn, () => api("POST", "/partner/payouts", body), t("partner.payoutRequested"))) reload();
+    },
+  }, h("h3", {}, t("partner.payoutTitle")),
+  h("div", { class: "hint" }, t("partner.payoutHint", { min: money(s.payout_min_amount) })),
+  h("div", { class: "row" }, pAmount, pMethod), pDetails, h("div", {}, pBtn));
+
+  // Журнал заработка — лента с подгрузкой
+  const txRows = h("tbody");
+  const txRow = (op) => h("tr", {},
+    h("td", { class: "nowrap" }, dateTime(op.created_at)),
+    h("td", {}, known("ptx", op.type)),
+    h("td", {}, op.description || ""),
+    h("td", { class: "num", style: PTX_MINUS.has(op.type) ? "" : "color:var(--ok)" },
+      (PTX_MINUS.has(op.type) ? "−" : "+") + money(op.amount)));
+  const { more: txMore, first: txCount } = await cursorFeed("/partner/transactions", 20, txRow, txRows);
+
+  add(wrap,
+    h("div", { class: "row between" }, h("h1", {}, t("nav.partner")), daysSelect(days, reload)),
+    h("p", { class: "muted" }, t("partner.intro", { share: percent(s.revenue_share), days: s.hold_days })),
+    h("div", { class: "grid" },
+      statCard(t("partner.available"), money(s.earnings_balance)),
+      statCard(t("partner.pending"), money(s.pending)),
+      statCard(t("partner.earned"), money(s.totals.earnings)),
+      statCard(t("stat.impressions"), int(s.totals.impressions)),
+      statCard(t("stat.clicks"), int(s.totals.clicks)),
+      statCard(t("stat.ctr"), ctr(s.totals))),
+    Number(s.pending) > 0 ? h("p", { class: "small muted" }, t("partner.pendingHint", { days: s.hold_days })) : null,
+    h("div", { class: "card" }, h("h2", {}, t("partner.withdraw")),
+      h("div", { class: "form-grid" }, h("div", { class: "field" }, transferForm), h("div", { class: "field" }, payoutForm))),
+    h("div", { class: "card" }, h("h2", {}, t("common.byDays")),
+      chart(s.days, (d) => t("chart.tipPartner", { day: shortDay(d.day), impressions: int(d.impressions),
+        clicks: int(d.clicks), earnings: money(d.earnings) }))),
+    await sitesCard(sites, s.sites, reload),
+    referralCard(ref),
+    payouts.length ? h("div", { class: "card" }, h("h2", {}, t("partner.payouts")),
+      table([t("col.when"), { label: t("col.amount"), num: 1 }, t("partner.method"), t("col.status")],
+        payouts.map((p) => h("tr", {},
+          h("td", { class: "nowrap" }, dateTime(p.created_at)),
+          h("td", { class: "num" }, money(p.amount)),
+          h("td", {}, t(`method.${p.method}`), h("div", { class: "small muted break" }, p.details)),
+          h("td", {}, payoutBadge(p.status), p.admin_note ? h("div", { class: "small muted" }, p.admin_note) : null))))) : null,
+    h("div", { class: "card" }, h("h2", {}, t("partner.history")),
+      txCount ? h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, h("th", {}, t("col.when")), h("th", {}, t("col.type")),
+          h("th", {}, t("col.description")), h("th", { class: "num" }, t("col.amount")))),
+        txRows)) : h("div", { class: "empty" }, t("partner.noHistory")),
+      h("div", { style: "margin-top:10px" }, txMore)));
+  return wrap;
+}
+
+async function sitesCard(sites, totals, reload) {
+  const name = h("input", { required: true, maxLength: 255, placeholder: t("partner.siteNamePlaceholder") });
+  const url = h("input", { type: "url", required: true, placeholder: "https://…" });
+  const addBtn = h("button", { class: "primary", type: "submit" }, t("partner.addSite"));
+  const addForm = h("form", {
+    class: "row",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const body = { name: name.value.trim(), url: url.value.trim() };
+      if (await run(addBtn, () => api("POST", "/partner/sites", body), t("partner.siteAdded"))) reload();
+    },
+  }, name, url, addBtn);
+
+  const byId = Object.fromEntries(totals.map((x) => [x.site_id, x]));
+  const blocks = await Promise.all(sites.map(async (site) => {
+    const st = byId[site.id] || { impressions: 0, clicks: 0, earnings: 0 };
+    const placements = await api("GET", `/partner/sites/${site.id}/placements`);
+    const pName = h("input", { required: true, maxLength: 255, placeholder: t("partner.placementPlaceholder"), style: "width:280px" });
+    const pBtn = h("button", { class: "small", type: "submit" }, t("partner.addPlacement"));
+    const closed = site.status === "rejected" || site.status === "blocked";
+    return h("div", { class: "card stack" },
+      h("div", { class: "row between" },
+        h("div", {}, h("b", {}, site.name), " ", siteBadge(site.status),
+          h("div", { class: "small muted" }, h("a", { href: site.url, target: "_blank", rel: "noopener noreferrer" }, site.domain),
+            " · ", t("partner.share", { share: percent(site.revenue_share) }))),
+        h("div", { class: "small muted" }, t("partner.siteTotals", { impressions: int(st.impressions),
+          clicks: int(st.clicks), earnings: money(st.earnings) }))),
+      site.status === "pending" ? h("div", { class: "notice warn" }, t("partner.sitePending")) : null,
+      site.rejection_reason ? h("div", { class: "notice error" }, t("partner.siteReason", { reason: site.rejection_reason })) : null,
+      placements.length ? table([t("col.placement"), t("col.embed")], placements.map((p) => {
+        const snippet = embedCode(p.code_identifier);
+        return h("tr", {},
+          h("td", {}, h("b", {}, p.name), h("div", { class: "mono muted" }, p.code_identifier)),
+          h("td", {}, h("pre", { class: "code mono" }, snippet),
+            h("div", { class: "row" },
+              h("button", { class: "small", onclick: () => copy(snippet) }, t("placements.copyCode")),
+              h("a", { class: "btn small", href: `/demo?placement=${encodeURIComponent(p.code_identifier)}`, target: "_blank" },
+                t("placements.demo")))));
+      })) : h("p", { class: "small muted" }, t("partner.noPlacements")),
+      closed ? null : h("form", {
+        class: "inline-form",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          const body = { name: pName.value.trim() };
+          if (await run(pBtn, () => api("POST", `/partner/sites/${site.id}/placements`, body), t("partner.placementAdded"))) reload();
+        },
+      }, pName, pBtn));
+  }));
+
+  return h("div", { class: "card stack" },
+    h("h2", {}, t("partner.sites")),
+    h("p", { class: "small muted" }, t("partner.sitesHint")),
+    addForm,
+    blocks.length ? h("div", { class: "stack" }, blocks) : h("div", { class: "empty" }, t("partner.noSites")));
+}
+
+function referralCard(ref) {
+  return h("div", { class: "card stack" },
+    h("h2", {}, t("ref.title")),
+    h("p", { class: "muted" }, t("ref.intro", { share: percent(ref.share), days: ref.days })),
+    h("div", { class: "row" },
+      h("input", { readonly: true, value: ref.link, class: "mono", onfocus: (e) => e.target.select() }),
+      h("button", { class: "small", onclick: () => copy(ref.link) }, t("ref.copy"))),
+    h("div", { class: "grid" },
+      statCard(t("ref.invited"), int(ref.invited)),
+      statCard(t("ref.active"), int(ref.active)),
+      statCard(t("ref.earned"), money(ref.earned_total))));
+}
+
+// ---------- Админ: сайты партнёров ----------
+async function adminSitesView(filter = "pending") {
+  const wrap = h("div");
+  const reload = async (f = filter) => wrap.replaceWith(await adminSitesView(f));
+  const query = filter === "all" ? "" : `&status=${filter}`;
+  const rows = h("tbody");
+  const row = (site) => {
+    const share = h("input", { type: "number", min: "0", max: "100", step: "0.1", style: "width:80px",
+      placeholder: percent(site.revenue_share), value: site.custom_share ? Math.round(site.revenue_share * 1000) / 10 : "" });
+    const reason = h("input", { maxLength: 1000, placeholder: t("sites.reasonPlaceholder") });
+    const send = (status, btn) => {
+      const body = { status, reason: reason.value.trim() || null };
+      if (share.value === "") body.reset_share = true;
+      else body.revenue_share = (Number(share.value) / 100).toFixed(3);
+      return run(btn, () => api("POST", `/admin/partner/sites/${site.id}/moderate`, body), t("sites.saved")).then((ok) => ok && reload());
+    };
+    const approve = h("button", { class: "small primary" }, t(site.status === "approved" ? "common.save" : "sites.approve"));
+    const reject = h("button", { class: "small" }, t("sites.reject"));
+    const block = h("button", { class: "small danger" }, t("sites.block"));
+    approve.onclick = () => send("approved", approve);
+    reject.onclick = () => send("rejected", reject);
+    block.onclick = () => send("blocked", block);
+    return h("tr", {},
+      h("td", {}, h("b", {}, site.name), " ", siteBadge(site.status),
+        h("div", { class: "small" }, h("a", { href: site.url, target: "_blank", rel: "noopener noreferrer", class: "break" }, site.url)),
+        h("div", { class: "small muted" }, site.owner_email, " · ", dateTime(site.created_at)),
+        site.rejection_reason ? h("div", { class: "small", style: "color:var(--danger)" }, site.rejection_reason) : null),
+      h("td", {}, h("div", { class: "inline-form" }, share, "%"), h("div", { class: "hint" }, t("sites.shareHint"))),
+      h("td", { class: "stack" }, reason, h("div", { class: "row" },
+        approve, site.status === "rejected" ? null : reject, site.status === "blocked" ? null : block)));
+  };
+  const feed = await offsetList(`/admin/partner/sites?limit=50${query}`, row, rows);
+  add(wrap,
+    h("h1", {}, t("nav.sites")),
+    filterTabs(["pending", "approved", "rejected", "blocked", "all"], filter, (f) => (f === "all" ? t("sites.all") : known("sstatus", f)), reload),
+    h("div", { class: "card" }, feed.first ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, t("sites.site")), h("th", {}, t("sites.share")), h("th", {}, t("col.actions")))), rows))
+      : h("div", { class: "empty" }, t("sites.empty")),
+      h("div", { style: "margin-top:10px" }, feed.more)));
+  return wrap;
+}
+
+// ---------- Админ: выплаты партнёрам ----------
+async function adminPayoutsView(filter = "pending") {
+  const wrap = h("div");
+  const reload = async (f = filter) => wrap.replaceWith(await adminPayoutsView(f));
+  const query = filter === "all" ? "" : `&status=${filter}`;
+  const rows = h("tbody");
+  const row = (p) => {
+    const note = h("input", { maxLength: 500, placeholder: t("payouts.notePlaceholder") });
+    const paid = h("button", { class: "small primary" }, t("payouts.markPaid"));
+    const reject = h("button", { class: "small danger" }, t("payouts.reject"));
+    const act = (action, btn, done) => run(btn, () => api("POST", `/admin/partner/payouts/${p.id}/${action}`,
+      { note: note.value.trim() || null }), done).then((ok) => ok && reload());
+    paid.onclick = () => confirm(t("payouts.paidConfirm", { amount: money(p.amount), email: p.owner_email }))
+      && act("paid", paid, t("payouts.markedPaid"));
+    reject.onclick = () => act("reject", reject, t("payouts.rejected"));
+    return h("tr", {},
+      h("td", { class: "nowrap" }, `#${p.id} `, dateTime(p.created_at), h("div", { class: "small muted" }, p.owner_email)),
+      h("td", { class: "num" }, h("b", {}, money(p.amount))),
+      h("td", {}, t(`method.${p.method}`), h("div", { class: "mono small break" }, p.details)),
+      h("td", { class: "stack" }, payoutBadge(p.status),
+        p.status === "pending" ? h("div", { class: "stack" }, note, h("div", { class: "row" }, paid, reject))
+          : h("div", { class: "small muted" }, dateTime(p.processed_at), p.admin_note ? ` · ${p.admin_note}` : "")));
+  };
+  const feed = await offsetList(`/admin/partner/payouts?limit=50${query}`, row, rows);
+  const matureBtn = h("button", { class: "small" }, t("payouts.mature"));
+  matureBtn.onclick = async () => {
+    const r = await run(matureBtn, () => api("POST", "/admin/partner/mature"));
+    if (r) toast(t("payouts.matured", { amount: money(r.matured) }));
+  };
+  add(wrap,
+    h("div", { class: "row between" }, h("h1", {}, t("nav.payouts")), matureBtn),
+    filterTabs(["pending", "paid", "rejected", "all"], filter, (f) => (f === "all" ? t("sites.all") : known("pstatus", f)), reload),
+    h("div", { class: "card" }, feed ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, t("col.when")), h("th", { class: "num" }, t("col.amount")),
+        h("th", {}, t("partner.method")), h("th", {}, t("col.status")))), rows))
+      : h("div", { class: "empty" }, t("payouts.empty")),
+      h("div", { style: "margin-top:10px" }, feed.more)));
+  return wrap;
+}
+
+// Список с подгрузкой по offset, где ответ — массив и заголовок X-Has-More (без total)
+async function offsetList(path, renderRow, tbody) {
+  let offset = 0;
+  const more = h("button", { class: "small" }, t("common.showMore"));
+  const load = async () => {
+    const page = await api("GET", `${path}&offset=${offset}`, undefined, { page: true });
+    page.items.forEach((item) => tbody.append(renderRow(item)));
+    offset += page.items.length;
+    more.hidden = !page.hasMore;
+    return page.items.length;
+  };
+  more.onclick = (e) => run(e.currentTarget, load);
+  const first = await load();
+  return { first, more };
+}
+
+function filterTabs(values, current, label, onChange) {
+  return h("div", { class: "tabs", style: "margin-bottom:12px" },
+    values.map((v) => h("button", { type: "button", class: v === current ? "on" : "", onclick: () => onChange(v) }, label(v))));
 }
 
 // ---------- Админ: пользователи ----------
