@@ -41,6 +41,8 @@ def server():
            "DATABASE_URL": db_url,
            "SECRET_KEY": "e2e-secret-key-0123456789abcdefghijklmnopq",
            "BCRYPT_ROUNDS": "4",
+           # Все пользователи тестов регистрируются с 127.0.0.1; сам лимит проверяют юнит-тесты
+           "REGISTER_MAX_PER_IP_PER_HOUR": "1000",
            "PAYMENTS_PROVIDER": "test",  # оплата картой — тестовым провайдером (деньги ненастоящие)
            "ANTHROPIC_API_KEY": "", "GEMINI_API_KEY": "", "OPENAI_API_KEY": ""}  # без обращений к внешним API
     SERVER_DB["url"] = db_url
@@ -109,8 +111,9 @@ def screenshots_on_failure(request):
                 pass
 
 
-def new_page(browser, errors):
-    ctx = browser.new_context(locale="ru-RU")
+def new_page(browser, errors, locale="ru-RU"):
+    # Язык браузера ru-RU: кабинет открывается по-русски (cookie lang не задан) — тексты в тестах русские
+    ctx = browser.new_context(locale=locale)
     # Внешние сайты подменяем: тест не зависит от интернета
     ctx.route("https://example.com/**", lambda route: route.fulfill(
         status=200, content_type="text/html", body="<h1>Сайт рекламодателя</h1>"))
@@ -499,4 +502,41 @@ def test_top_up_by_card_and_plan(server, browser):
     page.click("button:has-text('Отменить')")
     page.wait_for_selector("h1:has-text('Кошелёк')")
     playwright_api.expect(page.locator("#balance")).to_have_text("75,00")
+    assert errors == [], errors
+
+
+def test_cabinet_language_follows_browser_and_switcher(server, browser):
+    expect = playwright_api.expect
+    errors = []
+    # Немецкий браузер без выбора языка → кабинет по-немецки
+    page = new_page(browser, errors, locale="de-DE")
+    page.goto(server + "/app")
+    expect(page.locator(".tabs button.on")).to_have_text("Anmelden")
+    assert page.evaluate("document.documentElement.lang") == "de"
+
+    page.click(".tabs button:has-text('Registrieren')")
+    page.fill("#auth-email", "lang@e2e.ru")
+    page.fill("#auth-password", PASSWORD)
+    page.click("form button[type=submit]")
+    page.wait_for_selector("h1:has-text('Übersicht')")
+    expect(page.locator("#balance")).to_have_text("0,00")  # деньги в немецком формате
+
+    # Переключатель: страница перерисовывается на английском, выбор запоминается в cookie сайта
+    page.click(".topbar .langs button:has-text('EN')")
+    page.wait_for_selector("h1:has-text('Overview')")
+    expect(page.locator("nav a.active")).to_have_text("Overview")
+    expect(page.locator(".topbar .langs button.on")).to_have_text("EN")
+    assert page.evaluate("document.documentElement.lang") == "en"
+    assert any(c["name"] == "lang" and c["value"] == "en" for c in page.context.cookies())
+    expect(page.locator("#balance")).to_have_text("0.00")
+
+    # Cookie важнее языка браузера: после перезагрузки — снова английский
+    page.reload()
+    page.wait_for_selector("h1:has-text('Overview')")
+    page.click("nav a:has-text('Wallet')")
+    page.wait_for_selector("h2:has-text('Transaction history')")
+
+    # Обратно на русский — на той же странице
+    page.click(".topbar .langs button:has-text('RU')")
+    page.wait_for_selector("h1:has-text('Кошелёк')")
     assert errors == [], errors

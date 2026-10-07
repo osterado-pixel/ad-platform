@@ -131,6 +131,13 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 бэкенда `/app`; сайт и кабинет на одном домене, поэтому вход общий. В Docker — сервис `frontend`
 (образ `ghcr.io/osterado-pixel/ad-platform-frontend`, публикует CI вместе с образом API).
 
+Язык у сайта и кабинета общий: выбор в переключателе EN · RU · DE запоминается в cookie `lang` на год;
+без выбора — язык браузера, а если он не из трёх — английский. Числа, суммы и даты — в формате языка
+(`1,234.50` / `1 234,50` / `1.234,50`). Словари кабинета — `backend/app/static/ui/i18n.js` (полноту,
+одинаковые подстановки и перевод всех статусов с сервера проверяет `tests/test_ui_i18n.py`), сайта —
+`frontend/src/i18n/dictionaries/` (`npm run check:i18n`). Сообщения сервера (ошибки API, описания
+операций в кошельке) пока на русском.
+
 С HTTPS-надстройкой всё идёт через Caddy на одном домене: `/api`, `/app`, `/static`, `/widget.js`,
 `/demo`, `/docs` — бэкенду, остальное — сайту; наружу открыт только Caddy (80/443). Без Caddy сайт
 сам передаёт эти пути бэкенду (`rewrites`, адрес — `BACKEND_URL` при сборке). Разработка — в
@@ -567,7 +574,7 @@ backend/
                      moderation_service.py — быстрая модерация текста; ai_background.py, ai_cleanup.py — фоновые задачи
     routers/         auth, placements, campaigns, ads (выдача и клики), wallet, users, stats, ai, telegram,
                      payments, plans
-    static/          widget.js, demo.html, ui/ (веб-интерфейс)
+    static/          widget.js, demo.html, ui/ (веб-интерфейс: app.js, i18n.js — словари EN/RU/DE)
     cli.py           команды администратора
   migrations/        миграции Alembic
   tests/             тесты (pytest), включая браузерные (test_ui_e2e.py)

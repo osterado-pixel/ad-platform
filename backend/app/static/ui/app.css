@@ -158,6 +158,17 @@ textarea { min-height: 72px; resize: vertical; }
 .tabs { display: flex; gap: 4px; margin-bottom: 14px; }
 .tabs button { flex: 1; }
 .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.auth-langs { display: flex; justify-content: center; margin-top: 14px; }
+
+/* --- Переключатель языка: EN · RU · DE одной группой --- */
+.langs { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
+.langs button {
+  border: none; border-radius: 0; background: transparent; padding: 4px 9px;
+  font-size: 12px; font-weight: 600; letter-spacing: .3px; color: var(--muted);
+}
+.langs button + button { border-left: 1px solid var(--border); }
+.langs button:hover { color: var(--text); }
+.langs button.on { background: var(--accent-soft); color: var(--accent); }
 
 /* --- Превью объявления --- */
 .ad-preview {
