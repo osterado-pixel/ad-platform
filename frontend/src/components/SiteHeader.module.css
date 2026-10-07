@@ -5,7 +5,7 @@
   border-bottom: 1px solid var(--border);
 }
 .inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; }
-.logo { font-weight: 800; font-size: 19px; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
+.logo { white-space: nowrap; font-weight: 800; font-size: 19px; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
 .nav { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
 .nav > a:not(:global(.btn)) { color: var(--muted); text-decoration: none; font-weight: 500; }
 .nav > a:not(:global(.btn)):hover { color: var(--text); }
@@ -13,4 +13,14 @@
 /* На телефоне — только «Войти»: разделы доступны прокруткой */
 @media (max-width: 640px) {
   .nav > a:not(:global(.btn)) { display: none; }
+  .nav { gap: 10px; flex-wrap: nowrap; }
+  .nav :global(.btn) { padding: 9px 14px; }
 }
+
+/* Переключатель языка */
+.langs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; }
+.lang, .langOn {
+  padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; text-decoration: none; color: var(--muted);
+}
+.lang:hover { color: var(--text); }
+.langOn { background: var(--accent-soft); color: var(--accent); }

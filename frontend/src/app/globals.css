@@ -90,7 +90,7 @@ p { margin: 0 0 12px; }
 .notice.info { background: var(--accent-soft); color: var(--accent); }
 
 label { display: block; font-weight: 600; margin-bottom: 6px; }
-input, textarea {
+input, textarea, select {
   width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--surface); color: var(--text); font: inherit;
 }

@@ -1,0 +1,122 @@
+{
+  "meta": {
+    "title": "Ad Platform — ads on partner websites with an AI copywriter",
+    "description": "Create an ad in minutes: AI writes three text variants in seconds. Impressions are free, you pay only for clicks, AI copy is billed at actual cost and refunded if it fails."
+  },
+  "header": {
+    "menu": "Main menu",
+    "how": "How it works",
+    "pricing": "Pricing",
+    "copywriter": "AI copywriter",
+    "login": "Log in",
+    "language": "Language"
+  },
+  "footer": {
+    "cabinet": "Dashboard",
+    "bannerExample": "Banner example on a website",
+    "api": "API for developers"
+  },
+  "home": {
+    "badge": "Ad network with an AI copywriter",
+    "titleStart": "Ads people click — written in",
+    "titleAccent": "seconds",
+    "lead": "AI writes three headline and text variants, your banner runs on partner websites, and you pay only for clicks. While copy is being generated, the money is held and refunded if anything fails.",
+    "ctaTry": "Try it",
+    "ctaPricing": "Pricing",
+    "demoTitle": "The AI copywriter in action",
+    "demoLead": "Describe your product — variants appear alongside. Until you log in, it shows a sample answer.",
+    "howTitle": "How it works",
+    "steps": [
+      { "title": "Sign up", "text": "An advertiser account in a minute — no contracts, no subscription fees." },
+      { "title": "Create an ad", "text": "Describe your product — the AI copywriter suggests three headline and text variants." },
+      { "title": "Pass moderation", "text": "A moderator reviews the ad; AI highlights possible violations in advance." },
+      { "title": "Pay per click", "text": "Your banner is shown on partner websites. You are charged only for visits to your site." }
+    ],
+    "features": [
+      { "title": "Fair billing", "text": "Impressions are free. Repeat clicks from the same address and bot clicks are not charged." },
+      { "title": "Money protection", "text": "During generation the amount is held and charged at actual cost. If it fails, everything is refunded." },
+      { "title": "Telegram bot", "text": "Balance and the AI copywriter right in Telegram — link it with a code from your dashboard, no password." },
+      { "title": "Daily statistics", "text": "Impressions, clicks, CTR and spend for every campaign — in your dashboard." }
+    ],
+    "pricingTitle": "Transparent pricing",
+    "pricingLead": "No subscriptions or pricing traps: pay only for what you use.",
+    "popular": "Popular",
+    "plans": [
+      { "name": "Account", "price": "0", "unit": "forever", "note": "To get started",
+        "items": ["No subscription fee", "No minimum budget", "Dashboard and statistics"], "cta": "Create an account" },
+      { "name": "AI copywriter", "price": "≈ 1 cent", "unit": "for 3 variants", "note": "Pay as you go",
+        "items": ["Billed at actual model usage", "Failed? Your money is refunded", "On the website and in the Telegram bot"], "cta": "Try it" },
+      { "name": "Advertising", "price": "per click", "unit": "at the placement's price", "note": "Price shown before launch",
+        "items": ["Impressions are free", "Repeat and bot clicks aren't charged", "Out of money — a pause, not a debt"], "cta": "Launch a campaign" }
+    ],
+    "faqTitle": "Questions",
+    "faq": [
+      { "q": "Is there a subscription fee?", "a": "No. You top up your balance and spend it on clicks and AI copy. Whatever is left stays on your balance." },
+      { "q": "How much does a click cost?", "a": "Each placement sets its own price per click — you see it when creating a campaign, before launch." },
+      { "q": "What if generation fails?", "a": "The held amount returns to your balance in full — you can see it in your wallet history." },
+      { "q": "What happens when my money runs out?", "a": "Ads pause automatically and resume after you top up. Your balance never goes negative." },
+      { "q": "Can I show these ads on my own website?", "a": "Yes, we connect placements manually: write to us and we'll give you the banner embed code." }
+    ],
+    "finalTitle": "Launch your first campaign today",
+    "finalCta": "Create an account"
+  },
+  "copy": {
+    "defaultAudience": "General audience",
+    "productLabel": "Product or service description",
+    "productPlaceholder": "For example: Python course for beginners — 40 lessons, practice, certificate",
+    "audienceLabel": "Target audience (optional)",
+    "audiencePlaceholder": "Students, junior developers",
+    "adLanguage": "Ad language",
+    "generate": "Generate variants",
+    "tooShort": "Please describe it in more detail — at least 10 characters",
+    "holdNote": "Up to {amount} is held during generation and charged at actual cost — usually about a cent. If it fails, everything is refunded.",
+    "guestText": "AI copy is paid from your account balance — log in or sign up, it's free.",
+    "guestCta": "Log in to try",
+    "guestHint": "After logging in, come back to this page — the login is shared.",
+    "disabled": "The AI copywriter is currently turned off by the platform administrator.",
+    "loading": "Loading…",
+    "loadError": "Couldn't load data: {error}",
+    "balance": "Balance",
+    "held": "on hold",
+    "sampleLabel": "sample answer",
+    "variantsCount": "3 variants",
+    "variantsLabel": "Variants",
+    "variant": "Variant {n}",
+    "fieldTitle": "Headline",
+    "fieldText": "Text",
+    "fieldCta": "Call to action",
+    "footnoteSample": "This is a sample. Your variants will appear here — you can copy them into an ad in your dashboard.",
+    "footnoteReal": "Copy the variant you like into an ad in your dashboard.",
+    "done": "Done — copy the variant you like into the campaign form in your dashboard.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "createCampaign": "Create a campaign",
+    "seconds": "s",
+    "failedFallback": "Generation failed. You were not charged.",
+    "timeout": "Generation is taking longer than usual. If the task doesn't finish, the money will be refunded automatically.",
+    "status": {
+      "idle": "waiting",
+      "pending": "queued · funds on hold",
+      "processing": "generating",
+      "completed": "done",
+      "failed": "error · funds refunded",
+      "timeout": "taking longer than usual"
+    },
+    "sample": [
+      { "title": "Python in 3 months", "text": "40 lessons with practice and a mentor. Certificate at the end", "cta": "Start learning" },
+      { "title": "Your first program — today", "text": "A beginner course: from basics to your own project", "cta": "Enroll" },
+      { "title": "A new career from scratch", "text": "Practice from the first lesson and reviews of your tasks", "cta": "Try it" }
+    ]
+  },
+  "generatePage": {
+    "metaTitle": "AI copywriter",
+    "metaDescription": "Three ad variants from a product description — in seconds.",
+    "title": "AI copywriter",
+    "lead": "Describe your product or service — AI suggests three headline and text variants."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "text": "This page doesn't exist or has moved.",
+    "home": "Go to the home page"
+  }
+}

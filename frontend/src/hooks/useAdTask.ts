@@ -3,9 +3,10 @@
 // AI-копирайтер: запуск фоновой генерации и опрос статуса.
 //
 //   const task = useAdTask();
-//   await task.start("Онлайн-курс Python для начинающих", "Студенты 18–25 лет");
+//   await task.start("Онлайн-курс Python для начинающих", "Студенты 18–25 лет", "ru");
 //   task.status    — "idle" | "pending" | "processing" | "completed" | "failed" | "timeout"
-//   task.variants  — варианты после "completed"; task.error — причина при "failed"
+//   task.variants  — варианты после "completed"; task.error — причина от сервера при "failed"
+//                    (null — показать свой текст из словаря: сбой без причины или "timeout")
 //
 // Деньги на время генерации замораживает сервер, после неё — списывает по факту или возвращает.
 // cancel() и уход со страницы только прекращают опрос: задача на сервере доработает.
@@ -45,7 +46,7 @@ export function useAdTask() {
   // Компонент убран со страницы — опрос прекращается, setState после этого не вызывается
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  const start = useCallback(async (productDescription: string, targetAudience = "Общая аудитория") => {
+  const start = useCallback(async (productDescription: string, targetAudience: string, language = "ru") => {
     controllerRef.current?.abort(); // новый запуск отменяет опрос предыдущего
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -58,7 +59,7 @@ export function useAdTask() {
       const task = await api<AITaskCreated>("/ai/generate-async", {
         method: "POST",
         signal,
-        body: JSON.stringify({ product_description: productDescription, target_audience: targetAudience }),
+        body: JSON.stringify({ product_description: productDescription, target_audience: targetAudience, language }),
       });
       setState((s) => ({ ...s, taskId: task.task_id, heldAmount: task.held_amount }));
 
@@ -75,14 +76,11 @@ export function useAdTask() {
           return variants;
         }
         if (t.status === "failed") {
-          setState((s) => ({ ...s, status: "failed", error: t.error ?? "Генерация не удалась", elapsed }));
+          setState((s) => ({ ...s, status: "failed", error: t.error, elapsed }));
           return null;
         }
         if (Date.now() - started > POLL_LIMIT_MS) {
-          setState((s) => ({
-            ...s, status: "timeout", elapsed,
-            error: "Генерация идёт дольше обычного. Если задача не завершится, деньги вернутся автоматически.",
-          }));
+          setState((s) => ({ ...s, status: "timeout", elapsed, error: null }));
           return null;
         }
         setState((s) => ({ ...s, status: t.status, elapsed }));

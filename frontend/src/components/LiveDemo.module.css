@@ -56,3 +56,7 @@
 @media (prefers-reduced-motion: reduce) {
   .spinner, .dotBusy { animation: none; }
 }
+
+/* Аудитория и язык объявлений — в одну строку (на телефоне — друг под другом) */
+.row2 { display: grid; gap: 12px; grid-template-columns: 1fr auto; align-items: end; }
+@media (max-width: 480px) { .row2 { grid-template-columns: 1fr; } }

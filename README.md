@@ -127,7 +127,7 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 
 ## Сайт (лендинг)
 
-`frontend/` — Next.js 16: лендинг (`/`) и AI-копирайтер (`/generate`). Кабинет — встроенный интерфейс
+`frontend/` — Next.js 16: лендинг (`/en`, `/ru`, `/de`) и AI-копирайтер (`/<язык>/generate`) на трёх языках. Кабинет — встроенный интерфейс
 бэкенда `/app`; сайт и кабинет на одном домене, поэтому вход общий. В Docker — сервис `frontend`
 (образ `ghcr.io/osterado-pixel/ad-platform-frontend`, публикует CI вместе с образом API).
 

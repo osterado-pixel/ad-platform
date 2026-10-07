@@ -1,0 +1,122 @@
+{
+  "meta": {
+    "title": "Ad Platform — Werbung auf Partner-Websites mit KI-Texter",
+    "description": "Eine Anzeige in wenigen Minuten: Die KI schreibt in Sekunden drei Textvarianten. Einblendungen sind kostenlos, Sie zahlen nur für Klicks, KI-Texte nach tatsächlichem Verbrauch – bei einem Fehler gibt es das Geld zurück."
+  },
+  "header": {
+    "menu": "Hauptmenü",
+    "how": "So funktioniert's",
+    "pricing": "Preise",
+    "copywriter": "KI-Texter",
+    "login": "Anmelden",
+    "language": "Sprache"
+  },
+  "footer": {
+    "cabinet": "Kundenbereich",
+    "bannerExample": "Banner-Beispiel auf einer Website",
+    "api": "API für Entwickler"
+  },
+  "home": {
+    "badge": "Werbenetzwerk mit KI-Texter",
+    "titleStart": "Anzeigen, die geklickt werden – in",
+    "titleAccent": "Sekunden",
+    "lead": "Die KI schreibt drei Varianten für Überschrift und Text, Ihr Banner erscheint auf Partner-Websites, und Sie zahlen nur für Klicks. Während der Erstellung wird der Betrag reserviert und bei einem Fehler zurückerstattet.",
+    "ctaTry": "Ausprobieren",
+    "ctaPricing": "Preise",
+    "demoTitle": "Der KI-Texter in Aktion",
+    "demoLead": "Beschreiben Sie Ihr Produkt – daneben erscheinen die Varianten. Solange Sie nicht angemeldet sind, sehen Sie dort eine Beispielantwort.",
+    "howTitle": "So funktioniert's",
+    "steps": [
+      { "title": "Registrieren", "text": "Ein Werbekonto in einer Minute – ohne Vertrag und ohne Grundgebühr." },
+      { "title": "Anzeige erstellen", "text": "Beschreiben Sie Ihr Produkt – der KI-Texter schlägt drei Varianten für Überschrift und Text vor." },
+      { "title": "Prüfung bestehen", "text": "Ein Moderator prüft die Anzeige; die KI weist vorab auf mögliche Verstöße hin." },
+      { "title": "Pro Klick zahlen", "text": "Ihr Banner erscheint auf Partner-Websites. Berechnet werden nur Besuche auf Ihrer Website." }
+    ],
+    "features": [
+      { "title": "Faire Abrechnung", "text": "Einblendungen sind kostenlos. Wiederholte Klicks von derselben Adresse und Bot-Klicks werden nicht berechnet." },
+      { "title": "Geldschutz", "text": "Während der Erstellung wird der Betrag reserviert und nach tatsächlichem Verbrauch abgerechnet. Bei einem Fehler wird alles erstattet." },
+      { "title": "Telegram-Bot", "text": "Kontostand und KI-Texter direkt in Telegram – verknüpft mit einem Code aus dem Kundenbereich, ohne Passwort." },
+      { "title": "Tagesstatistik", "text": "Einblendungen, Klicks, CTR und Ausgaben für jede Kampagne – im Kundenbereich." }
+    ],
+    "pricingTitle": "Transparente Preise",
+    "pricingLead": "Keine Abos und keine Preisfallen: Sie zahlen nur, was Sie nutzen.",
+    "popular": "Beliebt",
+    "plans": [
+      { "name": "Konto", "price": "0", "unit": "für immer", "note": "Für den Start",
+        "items": ["Keine Grundgebühr", "Kein Mindestbudget", "Kundenbereich und Statistik"], "cta": "Konto erstellen" },
+      { "name": "KI-Texter", "price": "≈ 1 Cent", "unit": "für 3 Varianten", "note": "Abrechnung nach Verbrauch",
+        "items": ["Nach tatsächlichem Modellverbrauch", "Fehler? Geld zurück", "Auf der Website und im Telegram-Bot"], "cta": "Ausprobieren" },
+      { "name": "Werbung", "price": "pro Klick", "unit": "zum Preis der Werbefläche", "note": "Preis vor dem Start sichtbar",
+        "items": ["Einblendungen kostenlos", "Wiederholte und Bot-Klicks kostenlos", "Guthaben aufgebraucht – Pause, keine Schulden"], "cta": "Kampagne starten" }
+    ],
+    "faqTitle": "Fragen",
+    "faq": [
+      { "q": "Gibt es eine Grundgebühr?", "a": "Nein. Sie laden Ihr Guthaben auf und nutzen es für Klicks und KI-Texte. Der Rest bleibt auf Ihrem Konto." },
+      { "q": "Was kostet ein Klick?", "a": "Jede Werbefläche legt ihren eigenen Klickpreis fest – Sie sehen ihn beim Anlegen der Kampagne, vor dem Start." },
+      { "q": "Was passiert, wenn die Erstellung fehlschlägt?", "a": "Der reservierte Betrag wird Ihrem Guthaben vollständig gutgeschrieben – sichtbar im Verlauf Ihres Kontos." },
+      { "q": "Was passiert, wenn mein Guthaben aufgebraucht ist?", "a": "Die Anzeigen pausieren automatisch und laufen nach dem Aufladen weiter. Ihr Konto wird nie negativ." },
+      { "q": "Kann ich die Anzeigen auf meiner eigenen Website zeigen?", "a": "Ja, Werbeflächen binden wir manuell an: Schreiben Sie uns, und wir geben Ihnen den Einbettungscode für das Banner." }
+    ],
+    "finalTitle": "Starten Sie noch heute Ihre erste Kampagne",
+    "finalCta": "Konto erstellen"
+  },
+  "copy": {
+    "defaultAudience": "Allgemeine Zielgruppe",
+    "productLabel": "Beschreibung des Produkts oder der Dienstleistung",
+    "productPlaceholder": "Zum Beispiel: Python-Kurs für Einsteiger – 40 Lektionen, Praxis, Zertifikat",
+    "audienceLabel": "Zielgruppe (optional)",
+    "audiencePlaceholder": "Studierende, Nachwuchsentwickler",
+    "adLanguage": "Sprache der Anzeige",
+    "generate": "Varianten erstellen",
+    "tooShort": "Bitte ausführlicher beschreiben – mindestens 10 Zeichen",
+    "holdNote": "Während der Erstellung werden bis zu {amount} reserviert und nach tatsächlichem Verbrauch abgerechnet – meist etwa ein Cent. Bei einem Fehler wird alles erstattet.",
+    "guestText": "KI-Texte werden vom Kontoguthaben bezahlt – melden Sie sich an oder registrieren Sie sich kostenlos.",
+    "guestCta": "Anmelden und ausprobieren",
+    "guestHint": "Kehren Sie nach der Anmeldung auf diese Seite zurück – die Anmeldung gilt auch hier.",
+    "disabled": "Der KI-Texter ist derzeit vom Administrator der Plattform deaktiviert.",
+    "loading": "Wird geladen…",
+    "loadError": "Daten konnten nicht geladen werden: {error}",
+    "balance": "Guthaben",
+    "held": "reserviert",
+    "sampleLabel": "Beispielantwort",
+    "variantsCount": "3 Varianten",
+    "variantsLabel": "Varianten",
+    "variant": "Variante {n}",
+    "fieldTitle": "Überschrift",
+    "fieldText": "Text",
+    "fieldCta": "Handlungsaufforderung",
+    "footnoteSample": "Dies ist ein Beispiel. Ihre Varianten erscheinen hier – Sie können sie im Kundenbereich in eine Anzeige übernehmen.",
+    "footnoteReal": "Übernehmen Sie die passende Variante im Kundenbereich in eine Anzeige.",
+    "done": "Fertig – kopieren Sie die passende Variante in das Kampagnenformular im Kundenbereich.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "createCampaign": "Kampagne erstellen",
+    "seconds": "s",
+    "failedFallback": "Die Erstellung ist fehlgeschlagen. Es wurde nichts berechnet.",
+    "timeout": "Die Erstellung dauert länger als üblich. Wird die Aufgabe nicht abgeschlossen, wird das Geld automatisch erstattet.",
+    "status": {
+      "idle": "bereit",
+      "pending": "in der Warteschlange · Betrag reserviert",
+      "processing": "wird erstellt",
+      "completed": "fertig",
+      "failed": "Fehler · Betrag erstattet",
+      "timeout": "dauert länger als üblich"
+    },
+    "sample": [
+      { "title": "Python in 3 Monaten", "text": "40 Lektionen mit Praxis und Mentor. Am Ende ein Zertifikat", "cta": "Jetzt lernen" },
+      { "title": "Ihr erstes Programm – heute", "text": "Kurs für Einsteiger: von den Grundlagen zum eigenen Projekt", "cta": "Anmelden" },
+      { "title": "Neuer Beruf von Grund auf", "text": "Praxis ab der ersten Lektion und Feedback zu Ihren Aufgaben", "cta": "Ausprobieren" }
+    ]
+  },
+  "generatePage": {
+    "metaTitle": "KI-Texter",
+    "metaDescription": "Drei Anzeigenvarianten aus einer Produktbeschreibung – in Sekunden.",
+    "title": "KI-Texter",
+    "lead": "Beschreiben Sie Ihr Produkt oder Ihre Dienstleistung – die KI schlägt drei Varianten für Überschrift und Text vor."
+  },
+  "notFound": {
+    "title": "Seite nicht gefunden",
+    "text": "Diese Seite gibt es nicht oder sie ist umgezogen.",
+    "home": "Zur Startseite"
+  }
+}
