@@ -1003,7 +1003,49 @@ async function profileView() {
     h("div", { class: "card small" }, h("div", {}, "Email: ", h("b", {}, state.me.email)),
       h("div", {}, "Роль: ", state.me.role === "admin" ? "администратор" : "рекламодатель"),
       h("div", { class: "muted" }, "Зарегистрирован: ", dateTime(state.me.created_at))),
+    await telegramCard(),
     form);
+}
+
+// Привязка Telegram-бота: одноразовый код из кабинета → бот. Пароль боту не нужен
+async function telegramCard() {
+  const status = await api("GET", "/telegram/status").catch(() => ({ enabled: false }));
+  if (!status.enabled) return null;
+  const card = h("div", { class: "card stack", id: "telegram-card", style: "max-width:520px" });
+  const reload = async () => card.replaceWith(await telegramCard());
+  add(card, h("h2", { style: "margin:0" }, "Telegram"));
+
+  if (status.linked) {
+    const unlink = h("button", { class: "danger small" }, "Отвязать");
+    unlink.onclick = async () => {
+      // 204 без тела: api() вернёт null — успех отмечаем явно
+      const ok = await run(unlink, async () => { await api("DELETE", "/telegram/link"); return true; }, "Telegram отвязан");
+      if (ok) reload();
+    };
+    add(card, h("div", { class: "notice ok" }, "Telegram привязан: бот показывает баланс и составляет объявления."),
+      h("div", { class: "row" }, unlink));
+    return card;
+  }
+
+  const getCode = h("button", { class: "primary small" }, "Получить код привязки");
+  const out = h("div", { class: "stack" });
+  getCode.onclick = async () => {
+    const res = await run(getCode, () => api("POST", "/telegram/link-code"));
+    if (!res) return;
+    out.replaceChildren(
+      h("div", {}, "Код: ", h("b", { style: "font-size:20px;letter-spacing:2px" }, res.code),
+        h("span", { class: "small muted" }, " · действует до ", dateTime(res.expires_at))),
+      res.deep_link
+        ? h("div", {}, h("a", { href: res.deep_link, target: "_blank", rel: "noopener noreferrer", class: "btn primary" },
+          "Открыть бота и привязать"))
+        : h("div", { class: "small muted" }, "Отправьте боту: /start ", res.code),
+      h("div", { class: "small muted" }, "После привязки обновите эту страницу."));
+  };
+  add(card,
+    h("div", { class: "small muted" }, status.bot_username ? `Бот: @${status.bot_username}. ` : "",
+      "Смотрите баланс и составляйте объявления прямо в Telegram."),
+    h("div", { class: "row" }, getCode), out);
+  return card;
 }
 
 // ---------- Старт ----------

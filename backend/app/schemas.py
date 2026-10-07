@@ -63,6 +63,7 @@ class UserResponse(BaseModel):
     is_admin: bool = False  # то же, что role == "admin" — удобно фронтенду
     balance: Money
     held_balance: Money = Decimal("0")  # заморожено под выполняющиеся AI-генерации
+    telegram_linked: bool = False
     created_at: UtcDatetime
 
 
@@ -447,3 +448,38 @@ class AITaskListResponse(PaginatedResponse[AITaskResponse]):
     """Список AI-задач: общий формат списков (items, total, limit, offset) + номер страницы."""
     page: int = Field(..., ge=1, description="Номер страницы (с 1)")
     size: int = Field(..., ge=1, description="Размер страницы (то же, что limit)")
+
+
+# --- Telegram-бот ---
+class TelegramStatus(BaseModel):
+    enabled: bool = Field(description="Бот подключён к платформе")
+    bot_username: str | None = None
+    linked: bool = Field(description="Telegram привязан к этому аккаунту")
+
+
+class TelegramLinkCodeResponse(BaseModel):
+    code: str = Field(description="Одноразовый код: отправьте боту /start <код>")
+    expires_at: UtcDatetime
+    deep_link: str | None = Field(default=None, description="Ссылка t.me/<бот>?start=<код> (если задано имя бота)")
+
+
+TelegramId = Annotated[int, Field(gt=0, description="ID пользователя Telegram (message.from_user.id)")]
+
+
+class BotLinkRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=32)
+    telegram_id: TelegramId
+
+
+class BotUserRequest(BaseModel):
+    telegram_id: TelegramId
+
+
+class BotGenerateRequest(AdGenerateRequest):
+    telegram_id: TelegramId
+
+
+class BotMe(BaseModel):
+    email: str
+    balance: Money
+    held_balance: Money

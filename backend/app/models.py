@@ -72,6 +72,11 @@ class User(Base):
     campaigns: Mapped[list["Campaign"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan", passive_deletes=True)
 
+    @property
+    def telegram_linked(self) -> bool:
+        """Привязан ли Telegram (сам telegram_id в ответах API не отдаём)."""
+        return self.telegram_id is not None
+
     # Флаг администратора — производный от role, а не отдельная колонка: иначе у пользователя
     # было бы два независимых признака админа, которые могут разойтись (role=advertiser,
     # is_admin=True) — и проверки доступа противоречили бы друг другу.
@@ -260,6 +265,21 @@ class AITask(Base):
     # Когда статус менялся в последний раз: «зависшую» в processing задачу видно по давности
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class TelegramLinkCode(Base):
+    """Одноразовый код привязки Telegram к аккаунту: выдаётся в кабинете, вводится в боте.
+
+    Хранится не сам код, а HMAC от него: утечка базы не даёт привязать чужой аккаунт.
+    """
+    __tablename__ = "telegram_link_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Один действующий код на пользователя: новый заменяет старый
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AILog(Base):

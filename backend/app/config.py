@@ -100,6 +100,13 @@ class Settings(BaseSettings):
     # Доля запросов с замером производительности (0 — только ошибки; 0.1 — каждый десятый запрос)
     sentry_traces_sample_rate: float = Field(default=0.0, ge=0, le=1)
 
+    # Telegram-бот (папка bot/). Общий секрет бота и API (не короче 32 символов): бот передаёт его
+    # в заголовке X-Bot-Secret. Пусто — бот выключен, эндпоинты /api/v1/bot/* не существуют (404)
+    telegram_bot_secret: str = ""
+    # Имя бота без @ — для ссылки привязки t.me/<имя>?start=<код> в кабинете
+    telegram_bot_username: str = ""
+    telegram_link_code_minutes: int = Field(default=10, ge=1, le=60)
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 
@@ -148,6 +155,9 @@ class Settings(BaseSettings):
             self.secret_key = _load_or_create_secret_key()
         if len(self.secret_key) < 32:
             raise ValueError("SECRET_KEY должен быть не короче 32 символов")
+        # Секрет бота даёт право действовать от имени любого привязавшего Telegram пользователя
+        if self.telegram_bot_secret and len(self.telegram_bot_secret) < 32:
+            raise ValueError("TELEGRAM_BOT_SECRET должен быть не короче 32 символов (или пусто — бот выключен)")
         return self
 
 

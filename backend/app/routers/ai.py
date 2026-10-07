@@ -90,18 +90,20 @@ def generate_ad_copy(
 MAX_ACTIVE_TASKS = 5  # незавершённых задач на пользователя: защита от засыпания очереди
 
 
-def _task_response(task: AITask) -> AITaskResponse:
+def task_response(task: AITask) -> AITaskResponse:
     return AITaskResponse(task_id=task.id, status=task.status.value, result=task.result,
                           error=task.error_message, created_at=task.created_at, updated_at=task.updated_at)
 
 
-@router.post("/generate-async", response_model=AITaskCreated, status_code=status.HTTP_202_ACCEPTED)
-def start_ad_generation(
-    request: AdGenerateRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+
+
+def queue_ad_generation(db: Session, user_id: int, request: AdGenerateRequest,
+                        background_tasks: BackgroundTasks, status_url_prefix: str = "/api/v1/ai/tasks") -> AITaskCreated:
+    """Фоновая генерация для пользователя: проверки, заморозка денег, задача в фон.
+
+    Общая для сайта (POST /ai/generate-async) и Telegram-бота (POST /bot/generate): одинаковые
+    модерация, лимит незавершённых задач и оплата.
+    """
     if not gemini_service.is_enabled():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="AI-копирайтер выключен: не задан GEMINI_API_KEY")
@@ -109,7 +111,7 @@ def start_ad_generation(
     check_local_rules(f"{request.product_description}\n{request.target_audience}")
 
     active = db.scalar(select(func.count()).select_from(AITask).where(
-        AITask.user_id == current_user.id,
+        AITask.user_id == user_id,
         AITask.status.in_([AITaskStatus.PENDING, AITaskStatus.PROCESSING])))
     if active >= MAX_ACTIVE_TASKS:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -120,23 +122,33 @@ def start_ad_generation(
     created: dict[str, str] = {}
 
     def create_task(db: Session, transaction_id: int) -> None:
-        task = AITask(user_id=current_user.id, transaction_id=transaction_id)
+        task = AITask(user_id=user_id, transaction_id=transaction_id)
         db.add(task)
         db.flush()
         created["id"] = task.id
 
-    hold = hold_user_balance(db, current_user.id, link=create_task)
+    hold = hold_user_balance(db, user_id, link=create_task)
     task_id = created["id"]
 
     background_tasks.add_task(
         run_gemini_generation_task,
         task_id=task_id,
-        user_id=current_user.id,
+        user_id=user_id,
         product_description=request.product_description,
         target_audience=request.target_audience,
         session_factory=background_session_factory(db),
     )
-    return AITaskCreated(task_id=task_id, check_status_url=f"/api/v1/ai/tasks/{task_id}", held_amount=hold.amount)
+    return AITaskCreated(task_id=task_id, check_status_url=f"{status_url_prefix}/{task_id}", held_amount=hold.amount)
+
+
+@router.post("/generate-async", response_model=AITaskCreated, status_code=status.HTTP_202_ACCEPTED)
+def start_ad_generation(
+    request: AdGenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return queue_ad_generation(db, current_user.id, request, background_tasks)
 
 
 @router.get("/tasks", response_model=AITaskListResponse)
@@ -159,7 +171,7 @@ def get_user_ai_tasks(
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     # id — второй ключ сортировки: у задач, созданных в одну секунду, порядок между страницами не «прыгает»
     tasks = db.scalars(query.order_by(AITask.created_at.desc(), AITask.id.desc()).offset(offset).limit(size)).all()
-    return AITaskListResponse(items=[_task_response(t) for t in tasks], total=total,
+    return AITaskListResponse(items=[task_response(t) for t in tasks], total=total,
                               limit=size, offset=offset, page=page, size=size)
 
 
@@ -173,4 +185,4 @@ def get_task_status(
     # Чужая задача — тоже 404: не подтверждаем, что такой id существует
     if task is None or task.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
-    return _task_response(task)
+    return task_response(task)

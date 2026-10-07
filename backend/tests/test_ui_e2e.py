@@ -412,3 +412,45 @@ def test_ai_copywriter_failed_task_and_disabled(server, browser):
     page2.wait_for_selector("#f-title")
     assert page2.locator("#ai-copywriter").count() == 0
     assert errors == [], errors
+
+
+def test_telegram_card_in_profile(server, browser):
+    import json as _json
+    errors = []
+    _advertiser(server, "tg@e2e.ru")
+    page = new_page(browser, errors)
+    state = {"linked": False}
+    page.route("**/api/v1/telegram/status", lambda r: r.fulfill(status=200, content_type="application/json",
+               body=_json.dumps({"enabled": True, "bot_username": "AdPlatformBot", "linked": state["linked"]})))
+    page.route("**/api/v1/telegram/link-code", lambda r: r.fulfill(status=200, content_type="application/json",
+               body=_json.dumps({"code": "ABCD2345", "expires_at": "2026-10-07T12:00:00Z",
+                                 "deep_link": "https://t.me/AdPlatformBot?start=ABCD2345"})))
+
+    def unlink(route):
+        state["linked"] = False
+        route.fulfill(status=204)
+    page.route("**/api/v1/telegram/link", unlink)
+
+    login(page, server, "tg@e2e.ru")
+    page.goto(server + "/app#/profile")
+    card = page.locator("#telegram-card")
+    playwright_api.expect(card).to_contain_text("@AdPlatformBot")
+    card.locator("button:has-text('Получить код привязки')").click()
+    playwright_api.expect(card).to_contain_text("ABCD2345")
+    link = card.locator("a:has-text('Открыть бота')")
+    assert link.get_attribute("href") == "https://t.me/AdPlatformBot?start=ABCD2345"
+    assert link.get_attribute("rel") == "noopener noreferrer"
+
+    state["linked"] = True
+    page.reload()
+    playwright_api.expect(page.locator("#telegram-card .notice.ok")).to_contain_text("Telegram привязан")
+    page.locator("#telegram-card button:has-text('Отвязать')").click()
+    playwright_api.expect(page.locator("#telegram-card")).to_contain_text("Получить код привязки")
+
+    # Бот не подключён к платформе (на тестовом сервере нет секрета) — блока нет
+    page2 = new_page(browser, errors)
+    login(page2, server, "tg@e2e.ru")
+    page2.goto(server + "/app#/profile")
+    page2.wait_for_selector("h1:has-text('Профиль')")
+    assert page2.locator("#telegram-card").count() == 0
+    assert errors == [], errors
