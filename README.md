@@ -56,7 +56,8 @@ docker compose up -d --build  # без .env тоже запустится: зн�
 docker compose exec api python -m app.cli create-admin admin@example.com
 ```
 
-Платформа: `http://СЕРВЕР:8000/app`. Миграции базы применяются автоматически при старте.
+Сайт (лендинг): `http://СЕРВЕР:3000`, кабинет: `http://СЕРВЕР:8000/app` (или `:3000/app` — сайт передаёт
+его бэкенду). Миграции базы применяются автоматически при старте.
 Данные PostgreSQL хранятся в томе `pgdata` и переживают пересборку.
 
 ### Боевой сервер: домен + HTTPS
@@ -123,6 +124,17 @@ cd backend && python seed.py                 # в Docker: docker compose exec ap
 Создаёт рекламодателя `advertiser@example.com` / `password123` (баланс 500), площадку
 `habr_main_banner` и активную кампанию со статистикой. Повторный запуск ничего не дублирует.
 Пароль известен всем — только для разработки и демонстрации, не для боевого сервера.
+
+## Сайт (лендинг)
+
+`frontend/` — Next.js 16: лендинг (`/`) и AI-копирайтер (`/generate`). Кабинет — встроенный интерфейс
+бэкенда `/app`; сайт и кабинет на одном домене, поэтому вход общий. В Docker — сервис `frontend`
+(образ `ghcr.io/osterado-pixel/ad-platform-frontend`, публикует CI вместе с образом API).
+
+С HTTPS-надстройкой всё идёт через Caddy на одном домене: `/api`, `/app`, `/static`, `/widget.js`,
+`/demo`, `/docs` — бэкенду, остальное — сайту; наружу открыт только Caddy (80/443). Без Caddy сайт
+сам передаёт эти пути бэкенду (`rewrites`, адрес — `BACKEND_URL` при сборке). Разработка — в
+[frontend/README.md](frontend/README.md).
 
 ## Как пользоваться
 
@@ -500,6 +512,7 @@ alembic upgrade head
 ## Структура
 
 ```
+frontend/            сайт на Next.js: лендинг, AI-копирайтер (src/app, src/components, src/hooks, src/services)
 backend/
   app/
     main.py          приложение, CORS, раздача интерфейса и виджета

@@ -12,6 +12,10 @@ services:
       FORWARDED_ALLOW_IPS: "*"
       ALLOWED_HOSTS: ${DOMAIN:?Задайте DOMAIN в .env (например ads.example.com)}
 
+  frontend:
+    # Наружу сайт не публикуется — только через Caddy
+    ports: !reset []
+
   caddy:
     image: caddy:2-alpine
     environment:
@@ -27,6 +31,8 @@ services:
       - caddy_config:/config
     depends_on:
       api:
+        condition: service_healthy
+      frontend:
         condition: service_healthy
     restart: unless-stopped
 

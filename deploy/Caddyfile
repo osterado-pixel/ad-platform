@@ -7,9 +7,19 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# Caddy сам передаёт X-Forwarded-For / X-Forwarded-Proto: платформа видит реальный IP
-	# посетителя (защита от повторных кликов) и что запрос пришёл по HTTPS (HSTS, ссылки https)
-	reverse_proxy api:8000
+	# Бэкенд (FastAPI): API, кабинет /app и его файлы, виджет для сайтов, документация API.
+	# Сайт и кабинет — на одном домене: вход общий, CORS не нужен
+	@backend path /api/* /app /app/* /static/* /widget.js /demo /docs /docs/* /redoc /openapi.json
+	handle @backend {
+		# Caddy сам передаёт X-Forwarded-For / X-Forwarded-Proto: платформа видит реальный IP
+		# посетителя (защита от повторных кликов) и что запрос пришёл по HTTPS (HSTS, ссылки https)
+		reverse_proxy api:8000
+	}
+
+	# Остальное — сайт (Next.js): лендинг, /generate
+	handle {
+		reverse_proxy frontend:3000
+	}
 
 	# Не раскрывать, какой сервер стоит за доменом
 	header -Server

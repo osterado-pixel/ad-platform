@@ -80,6 +80,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  frontend:
+    # Сайт (Next.js): лендинг и AI-копирайтер. Кабинет /app и API — у сервиса api
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://api:8000  # куда сайт передаёт /api, /app и т.п. (вшивается при сборке)
+    container_name: ad_platform_frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
   app_data:

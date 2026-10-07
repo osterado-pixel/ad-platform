@@ -21,7 +21,7 @@ concurrency:
 # останавливает задачу — до публикации образа дело не дойдёт.
 jobs:
   ci:
-    name: Тесты, браузер, Docker, публикация
+    name: Тесты, браузер, сайт, Docker, публикация
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -103,6 +103,23 @@ jobs:
           path: /tmp/adp_e2e_failures/
           if-no-files-found: ignore
 
+      # --- Сайт (Next.js): зависимости, проверка кода, сборка ---
+      - name: Установка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"            # как в frontend/Dockerfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Сайт — зависимости, ESLint, сборка
+        working-directory: frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+
       # --- 4. Docker: конфигурации, сборка, запуск собранного образа ---
       - name: Конфигурация docker compose корректна
         working-directory: .
@@ -125,8 +142,20 @@ jobs:
           push: false
           load: true                  # образ нужен следующему шагу
           tags: ad-platform-api:test
-          cache-from: type=gha        # кеш слоёв: повторная сборка — секунды
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api   # кеш слоёв: повторная сборка — секунды
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Проверка сборки образа сайта
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: ad-platform-frontend:test
+          build-args: BACKEND_URL=http://api:8000
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
       - name: Собранный образ запускается и отвечает
         working-directory: .
@@ -140,6 +169,17 @@ jobs:
             sleep 2
           done
           docker logs api
+          exit 1
+
+      - name: Образ сайта запускается и передаёт запросы API
+        working-directory: .
+        run: |
+          docker run -d --name frontend -p 3000:3000 --add-host api:host-gateway ad-platform-frontend:test
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/ > /dev/null && curl -fsS http://127.0.0.1:3000/api/v1/health; then exit 0; fi
+            sleep 2
+          done
+          docker logs frontend
           exit 1
 
       # --- 5. ПУБЛИКАЦИЯ В GITHUB CONTAINER REGISTRY (ghcr.io) ---
@@ -171,4 +211,26 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha        # слои уже собраны выше — займёт секунды
+          cache-from: type=gha,scope=api   # слои уже собраны выше — займёт секунды
+
+      - name: Метаданные образа сайта
+        if: env.PUBLISH == 'true'
+        id: meta_frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-frontend
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Сборка и push образа сайта
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          build-args: BACKEND_URL=http://api:8000
+          tags: ${{ steps.meta_frontend.outputs.tags }}
+          labels: ${{ steps.meta_frontend.outputs.labels }}
+          cache-from: type=gha,scope=frontend
