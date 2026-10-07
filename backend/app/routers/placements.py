@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin
 from app.database import get_db
-from app.models import Placement, User
+from app.models import Placement, Site, SiteStatus, User
 from app.pagination import fetch_page_with_total, limit_param, offset_param
 from app.schemas import PaginatedResponse, PlacementCreate, PlacementResponse, PlacementUpdate
 
@@ -49,7 +49,11 @@ def get_placements(
 ):
     # Публичный список: только активные площадки. Сортировка по id обязательна —
     # без неё база может отдавать строки в разном порядке, и страницы «перемешаются»
-    query = select(Placement).where(Placement.is_active.is_(True)).order_by(Placement.id)
+    # Площадки сайтов партнёров — только одобренных: на остальных реклама не показывается
+    query = (select(Placement).outerjoin(Placement.site)
+             .where(Placement.is_active.is_(True),
+                    or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED))
+             .order_by(Placement.id))
     return fetch_page_with_total(db, query, limit, offset)
 
 

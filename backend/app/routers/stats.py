@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Campaign, CampaignDailyStat, CampaignStatus, Placement, User, UserRole
+from app.models import (
+    Campaign, CampaignDailyStat, CampaignStatus, Placement, PlacementDailyStat, User, UserRole,
+)
 from app.schemas import (
     CampaignStats, CampaignTotals, DayStat, MyStats, PlacementTotals, PlatformStats, Totals,
 )
@@ -130,13 +132,13 @@ def platform_stats(
     start, end = _period(days)
     series = _daily(db, start, end)
 
-    d = CampaignDailyStat
+    # По статистике площадок, а не кампаний: у кампаний на всю сеть нет своей площадки
+    d = PlacementDailyStat
     per_placement = db.execute(
         select(Placement.id, Placement.name, Placement.code_identifier, Placement.is_active,
                func.coalesce(func.sum(d.impressions), 0), func.coalesce(func.sum(d.clicks), 0),
                func.coalesce(func.sum(d.spend), 0))
-        .outerjoin(Campaign, Campaign.placement_id == Placement.id)
-        .outerjoin(d, (d.campaign_id == Campaign.id) & (d.day >= start) & (d.day <= end))
+        .outerjoin(d, (d.placement_id == Placement.id) & (d.day >= start) & (d.day <= end))
         .group_by(Placement.id, Placement.name, Placement.code_identifier, Placement.is_active)
         .order_by(Placement.id)
         .limit(placements_limit + 1)

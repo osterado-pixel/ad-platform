@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.main import app
 from app.models import Campaign, CampaignStatus, Placement, User
+from app.routers.ads import click_signature
 
 SERVE = "/api/v1/ad/serve"
 
@@ -43,7 +44,8 @@ def test_serve_returns_public_fields_only(client, setup):
     assert r.json() == {
         "campaign_id": c.id, "title": "one", "description": "Скидки",
         "image_url": "https://cdn.ru/b.png",
-        "click_url": f"http://testserver/api/v1/ad/click/{c.id}",
+        "click_url": f"http://testserver/api/v1/ad/click/{c.id}"
+                     f"?p={c.placement_id}&s={click_signature(c.id, c.placement_id)}",
     }
 
 

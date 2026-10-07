@@ -1,12 +1,14 @@
 import hashlib
 import hmac
+import random
 import re
 import time
+from dataclasses import dataclass
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import Float, Numeric, cast, func, literal, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,9 +18,9 @@ from app.ledger import add_transaction
 from app.models import (
     Campaign, CampaignStatus, Click, EarningSource, Placement, Site, SiteStatus, TransactionType, User,
 )
-from app.services import partners
 from app.schemas import AdResponse
-from app.stats import bump_daily
+from app.services import partners
+from app.stats import bump_daily, bump_placement_daily
 
 router = APIRouter(prefix="/api/v1/ad", tags=["Выдача рекламы (Ad Serving)"])
 
@@ -28,23 +30,53 @@ NO_STORE = {"Cache-Control": "no-store"}
 # Поисковики и боты предпросмотра ссылок (Telegram, Slack, WhatsApp...) — клик не оплачивается
 BOT_UA = re.compile(r"bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp", re.IGNORECASE)
 
+# Сглаживание CTR для аукциона: (клики + 1) / (показы + 100) — у новой кампании без статистики
+# оценка 1%, по мере показов она сходится к настоящему CTR. Без сглаживания кампания с 1 кликом
+# на 1 показ (CTR 100%) обгоняла бы всех
+CTR_PRIOR_CLICKS = 1
+CTR_PRIOR_IMPRESSIONS = 100
 
-def _active_campaigns():
-    """Кампании, которые сейчас активны: статус ACTIVE, в периоде показа, на активной площадке
-    (площадка платформы или сайта партнёра, одобренного администратором)."""
+
+@dataclass(frozen=True)
+class Charge:
+    """Что и с кого списать за клик: кампания, цена, площадка показа и её партнёр (если есть)."""
+    id: int                       # кампания
+    user_id: int                  # рекламодатель
+    title: str
+    price: Decimal                # ставка кампании, без ставки — цена клика площадки
+    floor: Decimal                # цена клика площадки (минимальная ставка)
+    placement_id: int
+    site_id: int | None = None
+    publisher_id: int | None = None
+    revenue_share: Decimal | None = None
+
+
+def _live_campaigns():
+    """Кампании, которые сейчас можно показывать: статус ACTIVE и в периоде показа."""
     now = func.now()
-    return (
-        select(Campaign)
-        .join(Campaign.placement)
-        .outerjoin(Placement.site)
-        .where(
-            Campaign.status == CampaignStatus.ACTIVE,
-            Placement.is_active.is_(True),
-            or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED),
-            or_(Campaign.start_date.is_(None), Campaign.start_date <= now),
-            or_(Campaign.end_date.is_(None), Campaign.end_date >= now),
-        )
+    return select(Campaign).where(
+        Campaign.status == CampaignStatus.ACTIVE,
+        or_(Campaign.start_date.is_(None), Campaign.start_date <= now),
+        or_(Campaign.end_date.is_(None), Campaign.end_date >= now),
     )
+
+
+def _live_placement():
+    """Площадка, на которой можно показывать рекламу: активна и (если это сайт партнёра) сайт одобрен."""
+    return (
+        select(Placement.id, Placement.site_id, Placement.price_per_click.label("floor"),
+               Site.user_id.label("publisher_id"), Site.revenue_share)
+        .outerjoin(Placement.site)
+        .where(Placement.is_active.is_(True),
+               or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED))
+    )
+
+
+def click_signature(campaign_id: int, placement_id: int) -> str:
+    """Подпись пары (кампания, площадка) в ссылке клика: без SECRET_KEY нельзя подставить
+    в ссылку другую площадку и получить долю за чужой клик."""
+    msg = f"click:{campaign_id}:{placement_id}".encode()
+    return hmac.new(settings.secret_key.encode(), msg, hashlib.sha256).hexdigest()[:20]
 
 
 # --- 1. Эндпоинт получения рекламного объявления ---
@@ -63,8 +95,10 @@ def serve_ad(
 ):
     """
     Публичный эндпоинт для сайтов-партнеров.
-    Принимает `placement_code` (например, header_banner_1)
-    и возвращает случайную активную кампанию, владелец которой может оплатить клик.
+    Принимает `placement_code` (например, header_banner_1) и проводит аукцион среди кампаний
+    этой площадки и кампаний на всю сеть: побеждает наибольший ожидаемый доход с показа
+    (ставка × сглаженный CTR), доля AUCTION_EXPLORE_RATE показов — случайной кампании.
+    Участвуют кампании со ставкой не ниже цены клика площадки, владельцу которых хватает денег на клик.
     """
     if empty_status not in (404, 204):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -72,13 +106,7 @@ def serve_ad(
 
     # Шаг A: Ищем активную рекламную площадку по ее коду
     placement = db.execute(
-        select(Placement.id, Placement.site_id)
-        .outerjoin(Placement.site)
-        .where(
-            Placement.code_identifier == placement_code,
-            Placement.is_active.is_(True),
-            or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED),
-        )
+        _live_placement().where(Placement.code_identifier == placement_code)
     ).one_or_none()
     if placement is None:
         raise HTTPException(
@@ -87,16 +115,24 @@ def serve_ad(
             headers=NO_STORE,
         )
 
-    # Шаги B и C: случайная кампания площадки, владельцу которой хватает денег на клик.
+    # Шаги B и C: аукцион. Цена клика кампании — её ставка, без ставки — цена площадки.
     # Баланс общий на все кампании пользователя: при пополнении показ возобновится сам.
+    price = func.coalesce(Campaign.cpc_bid, literal(placement.floor, Numeric(12, 2)))
+    ctr = (cast(Campaign.clicks_count + CTR_PRIOR_CLICKS, Float)
+           / cast(Campaign.impressions_count + CTR_PRIOR_IMPRESSIONS, Float))
+    if random.random() < settings.auction_explore_rate:
+        order = (func.random(),)
+    else:
+        order = ((cast(price, Float) * ctr).desc(), func.random())  # равные — по очереди, случайно
     campaign = db.scalar(
-        _active_campaigns()
+        _live_campaigns()
         .join(Campaign.owner)
         .where(
-            Campaign.placement_id == placement.id,
-            User.balance >= Placement.price_per_click,
+            or_(Campaign.placement_id == placement.id, Campaign.placement_id.is_(None)),
+            price >= placement.floor,
+            User.balance >= price,
         )
-        .order_by(func.random())
+        .order_by(*order)
         .limit(1)
     )
     if campaign is None:
@@ -108,12 +144,14 @@ def serve_ad(
             headers=NO_STORE,
         )
 
+    click_url = request.url_for("track_click", campaign_id=campaign.id).include_query_params(
+        p=placement.id, s=click_signature(campaign.id, placement.id))
     ad = AdResponse(
         campaign_id=campaign.id,
         title=campaign.title,
         description=campaign.description,
         image_url=campaign.image_url,
-        click_url=str(request.url_for("track_click", campaign_id=campaign.id)),
+        click_url=str(click_url),
     )
     db.rollback()  # закрываем чтение: транзакция записи должна начаться с записи
 
@@ -126,6 +164,7 @@ def serve_ad(
                 .values(impressions_count=Campaign.impressions_count + 1)
             )
             bump_daily(db, ad.campaign_id, impressions=1)
+            bump_placement_daily(db, placement.id, impressions=1)
             if placement.site_id is not None:
                 partners.bump_site_daily(db, placement.site_id, impressions=1)
             db.commit()
@@ -143,14 +182,13 @@ def _ip_hash(request: Request) -> str:
     return hmac.new(settings.secret_key.encode(), ip.encode(), hashlib.sha256).hexdigest()
 
 
-def _charge_click(db: Session, request: Request, campaign) -> bool:
+def _charge_click(db: Session, request: Request, campaign: Charge) -> bool:
     """Списывает цену клика с владельца. True — клик оплачен и засчитан.
 
-    campaign — строка (id, user_id, title, price, site_id, publisher_id, revenue_share) из track_click.
     Клик на сайте партнёра: его доля начисляется в той же транзакции БД, что и списание.
     """
-    if _is_bot(request):
-        return False
+    if _is_bot(request) or campaign.price < campaign.floor:
+        return False  # ставку снизили ниже цены площадки уже после показа — клик не оплачивается
 
     price = campaign.price
     ip_hash = _ip_hash(request)
@@ -200,6 +238,7 @@ def _charge_click(db: Session, request: Request, campaign) -> bool:
         )
         # 5. Дневная статистика и запись в журнал — в той же транзакции БД, что и списание
         bump_daily(db, campaign.id, clicks=1, spend=price)
+        bump_placement_daily(db, campaign.placement_id, clicks=1, spend=price)
         if price > 0:
             add_transaction(
                 db, user_id=campaign.user_id, amount=price, type=TransactionType.CLICK_SPEND,
@@ -223,21 +262,19 @@ def _charge_click(db: Session, request: Request, campaign) -> bool:
 def track_click(
     campaign_id: int,
     request: Request,
+    p: int | None = Query(default=None, description="Площадка показа (из ссылки, выданной /serve)"),
+    s: str | None = Query(default=None, max_length=64, description="Подпись площадки"),
     db: Session = Depends(get_db),
 ):
     """
-    Оплачивает клик (price_per_click площадки списывается с баланса владельца)
-    и перенаправляет пользователя на target_url.
+    Оплачивает клик и перенаправляет пользователя на target_url. Цена — ставка кампании
+    (без ставки — цена клика площадки); на сайте партнёра его доля начисляется сразу.
     Боты, повторные клики и клики без денег на балансе не оплачиваются, но редирект выполняется.
     """
-    # Всё нужное одним запросом (без отдельной подгрузки площадки)
     campaign = db.execute(
-        _active_campaigns()
-        .with_only_columns(
-            Campaign.id, Campaign.user_id, Campaign.title, Campaign.target_url,
-            Placement.price_per_click.label("price"), Placement.site_id,
-            Site.user_id.label("publisher_id"), Site.revenue_share,
-        )
+        _live_campaigns()
+        .with_only_columns(Campaign.id, Campaign.user_id, Campaign.title, Campaign.target_url,
+                           Campaign.placement_id, Campaign.cpc_bid)
         .where(Campaign.id == campaign_id)
     ).one_or_none()
     if campaign is None:
@@ -246,11 +283,35 @@ def track_click(
             detail="Рекламная кампания не найдена",
             headers=NO_STORE,
         )
+
+    # Площадка, за клик на которой платим. У кампании с площадкой — всегда её площадка
+    # (ссылки, выданные до аукциона, — без p и s). У кампании на всю сеть — из подписанной ссылки
+    placement_id = campaign.placement_id
+    if placement_id is None and p is not None and s is not None \
+            and hmac.compare_digest(s, click_signature(campaign.id, p)):
+        placement_id = p
+    placement = None
+    if placement_id is not None:
+        placement = db.execute(_live_placement().where(Placement.id == placement_id)).one_or_none()
     # Закрываем читающую транзакцию до записи: в SQLite транзакция «чтение → запись»
     # при конкуренции сразу получает "database is locked", не дожидаясь timeout
     db.rollback()
 
-    _charge_click(db, request, campaign)
+    if placement is None and campaign.placement_id is not None:
+        # Площадку кампании отключили (или сайт партнёра заблокирован): как кампания не на показе
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Рекламная кампания не найдена",
+            headers=NO_STORE,
+        )
+    if placement is not None:
+        _charge_click(db, request, Charge(
+            id=campaign.id, user_id=campaign.user_id, title=campaign.title,
+            price=placement.floor if campaign.cpc_bid is None else campaign.cpc_bid,
+            floor=placement.floor, placement_id=placement.id, site_id=placement.site_id,
+            publisher_id=placement.publisher_id, revenue_share=placement.revenue_share,
+        ))
+    # Кампания на всю сеть без верной подписи площадки: не знаем, кому и сколько, — без оплаты
 
     # 302: обычный переход по ссылке; no-store — каждый клик доходит до сервера.
     # Посетитель уже кликнул, поэтому переводим его на сайт в любом случае

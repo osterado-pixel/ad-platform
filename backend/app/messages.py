@@ -252,6 +252,10 @@ MESSAGES: tuple[dict[str, str], ...] = (
        "Placement not found",
        "Werbefläche nicht gefunden"),
 
+    _m("Ставка ниже цены клика площадки ({price})",
+       "The bid is below the placement's cost per click ({price})",
+       "Das Gebot liegt unter dem Klickpreis der Werbefläche ({price})"),
+
     # ---------- Партнёрская программа ----------
     _m("Этот сайт уже добавлен в партнёрскую программу",
        "This site has already been added to the partner program",

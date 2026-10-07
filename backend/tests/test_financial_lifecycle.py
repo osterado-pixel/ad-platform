@@ -59,7 +59,7 @@ def test_full_financial_and_ad_lifecycle(client, auth_headers):
     ad = serve_resp.json()
     assert ad["campaign_id"] == campaign_id
     assert "target_url" not in ad  # переход только через click_url (для учёта кликов)
-    assert ad["click_url"].endswith(f"/api/v1/ad/click/{campaign_id}")
+    assert f"/api/v1/ad/click/{campaign_id}?p=" in ad["click_url"]
 
     # 6. Клик #1: списание 50.00, остаток 50.00
     click1_resp = visitor("1.1.1.1").get(ad["click_url"], follow_redirects=False)

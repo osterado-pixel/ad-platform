@@ -155,8 +155,15 @@ def _check_dates(start: datetime | None, end: datetime | None) -> None:
         raise ValueError("Дата окончания (end_date) раньше даты начала (start_date)")
 
 
+# Ставка за клик: больше 0 и не больше 1000 (защита от опечатки «10000» вместо «100.00»)
+Bid = Annotated[Money, Field(gt=0, le=1000, max_digits=12, decimal_places=2)]
+
+
 class CampaignBase(BaseModel):
-    placement_id: int = Field(gt=0)
+    # null — вся сеть: показ на любой площадке, где ставка не ниже её цены клика
+    placement_id: int | None = Field(default=None, gt=0)
+    # Ставка за клик; null — платить цену клика площадки. Выше ставка — чаще показ
+    cpc_bid: Bid | None = None
     title: Title
     description: Description | None = None
     image_url: WebUrl | None = None
@@ -175,7 +182,8 @@ class CampaignCreate(CampaignBase):
 
     model_config = ConfigDict(json_schema_extra={
         "examples": [{
-            "placement_id": 1,
+            "placement_id": None,
+            "cpc_bid": 0.25,
             "title": "Акция на курсы по Python",
             "description": "Скидка 50% только на этой неделе!",
             "image_url": "https://example.com/banner.png",
@@ -201,7 +209,7 @@ class CampaignResponse(CampaignBase):
 class CampaignAdminResponse(CampaignResponse):
     """Для админа: кто владелец и на какой площадке — для очереди модерации."""
     owner_email: str
-    placement_name: str
+    placement_name: str | None = None  # null — кампания на всю сеть
     # Подсказка AI-проверки (только для админа; рекламодатель видит лишь итог модерации)
     ai_verdict: Literal["approve", "review", "reject", "error"] | None = None
     ai_risk: Literal["low", "medium", "high"] | None = None
@@ -222,7 +230,8 @@ class CampaignUpdate(BaseModel):
         "examples": [{"title": "Новый заголовок"}, {"end_date": "2026-12-31T23:59:59Z"}]
     })
 
-    placement_id: int | None = Field(default=None, gt=0)
+    placement_id: int | None = Field(default=None, gt=0)  # null — вся сеть
+    cpc_bid: Bid | None = None  # null — цена клика площадки
     title: Title | None = None
     description: Description | None = None
     image_url: WebUrl | None = None
@@ -233,7 +242,7 @@ class CampaignUpdate(BaseModel):
     @model_validator(mode="after")
     def _required_not_null(self) -> "CampaignUpdate":
         # Эти поля можно не передавать, но нельзя очистить
-        for name in ("placement_id", "title", "target_url"):
+        for name in ("title", "target_url"):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"Поле {name} нельзя очистить")
         return self

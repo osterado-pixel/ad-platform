@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app import stats as stats_module
 from app.auth import create_access_token
 from app.main import app
-from app.models import Campaign, CampaignDailyStat, CampaignStatus, Placement, User
+from app.models import Campaign, CampaignDailyStat, CampaignStatus, Placement, PlacementDailyStat, User
 from app.routers import ads
 
 TODAY_TS = 1_791_201_600  # 2026-10-05 12:00 UTC
@@ -45,6 +45,10 @@ def world(db):
         CampaignDailyStat(campaign_id=c1.id, day=date(2026, 10, 3), impressions=10, clicks=2, spend=Decimal("4.00")),
         CampaignDailyStat(campaign_id=c3.id, day=date(2026, 10, 4), impressions=4, clicks=1, spend=Decimal("1.00")),
         CampaignDailyStat(campaign_id=c1.id, day=date(2026, 9, 1), impressions=99, clicks=9, spend=Decimal("18.00")),
+        # То же по площадкам (так прошлые дни переносит миграция 4ac66e1c75e6)
+        PlacementDailyStat(placement_id=p1.id, day=date(2026, 10, 3), impressions=10, clicks=2, spend=Decimal("4.00")),
+        PlacementDailyStat(placement_id=p2.id, day=date(2026, 10, 4), impressions=4, clicks=1, spend=Decimal("1.00")),
+        PlacementDailyStat(placement_id=p1.id, day=date(2026, 9, 1), impressions=99, clicks=9, spend=Decimal("18.00")),
     ])
     db.commit()
     return owner, other, (p1, p2), (c1, c2, c3)

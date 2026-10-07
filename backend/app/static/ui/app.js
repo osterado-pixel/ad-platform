@@ -506,7 +506,8 @@ function campaignActions(c, onChange) {
 
 async function campaignsView() {
   const placements = await loadPlacements();
-  const placeName = (id) => (placements.find((p) => p.id === id) || {}).name || t("common.disabledRef", { id });
+  const placeName = (id) => id == null ? t("campaign.network")
+    : (placements.find((p) => p.id === id) || {}).name || t("common.disabledRef", { id });
   const wrap = h("div");
   const reload = async () => wrap.replaceWith(await campaignsView());
   const rows = h("tbody");
@@ -551,9 +552,11 @@ async function campaignDetailView(id, days = 30) {
       h("div", { class: "small muted" }, tx("detail.target", {
         url: h("a", { href: c.target_url, target: "_blank", rel: "noopener noreferrer", class: "break" }, c.target_url) })),
       h("div", { class: "small muted" },
-        t("detail.placement", { placement: placement
+        t("detail.placement", { placement: c.placement_id == null ? t("campaign.network") : placement
           ? t("detail.placementPrice", { name: placement.name, price: money(placement.price_per_click) })
           : `#${c.placement_id}` }),
+        " · ",
+        c.cpc_bid != null ? t("detail.bid", { bid: money(c.cpc_bid) }) : t("detail.bidAuto"),
         " · ",
         t("detail.schedule", {
           start: c.start_date ? t("detail.startFrom", { date: dateTime(c.start_date) }) : t("detail.startNow"),
@@ -670,13 +673,17 @@ async function campaignFormView(id) {
   }
   const c = original || {};
   const f = {
-    placement_id: h("select", { id: "f-placement", required: true },
+    // Пустое значение — вся сеть (по умолчанию для новой кампании: больше показов)
+    placement_id: h("select", { id: "f-placement" },
+      h("option", { value: "", selected: c.placement_id == null }, t("form.networkOption")),
       placements.map((p) => h("option", { value: p.id, selected: p.id === c.placement_id },
         t("form.placementOption", { name: p.name, price: money(p.price_per_click) }))),
       // Текущая площадка отключена: оставляем её выбранной, чтобы не сменить молча
-      original && !placements.some((p) => p.id === original.placement_id)
+      original && original.placement_id != null && !placements.some((p) => p.id === original.placement_id)
         ? h("option", { value: original.placement_id, selected: true }, t("common.disabledRef", { id: original.placement_id }))
         : null),
+    cpc_bid: h("input", { id: "f-bid", type: "number", min: "0.01", max: "1000", step: "0.01",
+      placeholder: t("form.bidPlaceholder"), value: c.cpc_bid ?? "" }),
     title: h("input", { id: "f-title", required: true, maxLength: 255, value: c.title || "" }),
     description: h("textarea", { id: "f-description", maxLength: 1000 }, c.description || ""),
     image_url: h("input", { id: "f-image", type: "url", placeholder: "https://…", value: c.image_url || "" }),
@@ -685,7 +692,8 @@ async function campaignFormView(id) {
     end_date: h("input", { id: "f-end", type: "datetime-local", value: toLocalInput(c.end_date) }),
   };
   const values = () => ({
-    placement_id: Number(f.placement_id.value),
+    placement_id: f.placement_id.value ? Number(f.placement_id.value) : null,
+    cpc_bid: f.cpc_bid.value ? Number(f.cpc_bid.value) : null,
     title: f.title.value.trim(),
     description: f.description.value.trim() || null,
     image_url: f.image_url.value.trim() || null,
@@ -727,7 +735,9 @@ async function campaignFormView(id) {
   },
   approved ? h("div", { class: "notice info" }, t("form.approvedNotice")) : null,
   h("div", { class: "form-grid" },
-    h("div", { class: "field full" }, h("label", { for: "f-placement" }, t("form.placement")), f.placement_id),
+    h("div", { class: "field" }, h("label", { for: "f-placement" }, t("form.placement")), f.placement_id),
+    h("div", { class: "field" }, h("label", { for: "f-bid" }, t("form.bid")), f.cpc_bid,
+      h("div", { class: "hint" }, t("form.bidHint"))),
     h("div", { class: "field full" }, h("label", { for: "f-title" }, t("form.title")), f.title),
     h("div", { class: "field full" }, h("label", { for: "f-description" }, t("form.description")), f.description,
       h("div", { class: "hint" }, t("form.descriptionHint"))),
@@ -918,7 +928,8 @@ async function moderationView() {
     add(wrap, h("div", { class: "card stack" },
       h("div", { class: "row between" },
         h("div", {}, h("b", {}, `#${c.id} `), c.title),
-        h("span", { class: "small muted" }, c.owner_email, " · ", c.placement_name, " · ", dateTime(c.created_at))),
+        h("span", { class: "small muted" }, c.owner_email, " · ", c.placement_name || t("campaign.network"), " · ",
+          dateTime(c.created_at))),
       adPreview(c),
       aiHint(c, aiStatus.enabled, reload),
       h("div", { class: "small" }, tx("moderation.link", {

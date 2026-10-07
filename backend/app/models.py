@@ -116,7 +116,9 @@ class Placement(Base):
     site_id: Mapped[int | None] = mapped_column(
         ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
 
-    campaigns: Mapped[list["Campaign"]] = relationship(back_populates="placement")
+    # passive_deletes="all": при удалении площадки ORM не обнуляет placement_id у кампаний
+    # (иначе они молча стали бы кампаниями на всю сеть) — удаление запрещает RESTRICT в БД
+    campaigns: Mapped[list["Campaign"]] = relationship(back_populates="placement", passive_deletes="all")
     site: Mapped["Site | None"] = relationship(back_populates="placements")
 
 
@@ -266,6 +268,7 @@ class Campaign(Base):
     __table_args__ = (
         CheckConstraint("end_date IS NULL OR start_date IS NULL OR end_date >= start_date",
                         name="ck_campaigns_dates"),
+        CheckConstraint("cpc_bid IS NULL OR cpc_bid > 0", name="ck_campaigns_cpc_bid_positive"),
         # /serve: активные кампании конкретной площадки. Покрывает и FK placement_id
         Index("ix_campaigns_placement_status", "placement_id", "status"),
     )
@@ -273,8 +276,12 @@ class Campaign(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    placement_id: Mapped[int] = mapped_column(
+    # Площадка кампании; NULL — вся сеть: показ на любой площадке, где ставка не ниже её цены клика
+    placement_id: Mapped[int | None] = mapped_column(
         ForeignKey("placements.id", ondelete="RESTRICT"))
+    # Ставка за клик. NULL — цена клика площадки (как до аукциона). Ставка ниже цены площадки —
+    # на этой площадке кампания не участвует. Выше ставка — чаще показ (app/routers/ads.py)
+    cpc_bid: Mapped[Decimal | None] = mapped_column(Money)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
     image_url: Mapped[str | None] = mapped_column(String(2048))
@@ -300,7 +307,7 @@ class Campaign(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     owner: Mapped["User"] = relationship(back_populates="campaigns")
-    placement: Mapped["Placement"] = relationship(back_populates="campaigns")
+    placement: Mapped["Placement | None"] = relationship(back_populates="campaigns")
 
     # Для CampaignAdminResponse (загружать с selectinload, чтобы не было запроса на каждую строку)
     @property
@@ -308,8 +315,9 @@ class Campaign(Base):
         return self.owner.email
 
     @property
-    def placement_name(self) -> str:
-        return self.placement.name
+    def placement_name(self) -> str | None:
+        """Название площадки; None — кампания на всю сеть."""
+        return self.placement.name if self.placement is not None else None
 
 
 class Click(Base):
@@ -361,6 +369,19 @@ class CampaignDailyStat(Base):
 
     campaign_id: Mapped[int] = mapped_column(
         ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    impressions: Mapped[int] = mapped_column(default=0, server_default="0")
+    clicks: Mapped[int] = mapped_column(default=0, server_default="0")
+    spend: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+
+
+class PlacementDailyStat(Base):
+    """Статистика площадки за день (UTC): показы, клики и оборот (цена кликов) — по всем кампаниям,
+    включая кампании на всю сеть (у них нет своей площадки, поэтому считать через кампании нельзя)."""
+    __tablename__ = "placement_daily_stats"
+
+    placement_id: Mapped[int] = mapped_column(
+        ForeignKey("placements.id", ondelete="CASCADE"), primary_key=True)
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     impressions: Mapped[int] = mapped_column(default=0, server_default="0")
     clicks: Mapped[int] = mapped_column(default=0, server_default="0")

@@ -1,14 +1,15 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import ai
 from app.auth import get_current_user, require_admin
 from app.config import settings
 from app.database import background_session_factory, get_db
-from app.models import Campaign, CampaignStatus, Placement, User, UserRole
+from app.models import Campaign, CampaignStatus, Placement, Site, SiteStatus, User, UserRole
 from app.moderation import run_ai_review
 from app.pagination import fetch_page_with_total, limit_param, offset_param
 from app.schemas import (
@@ -28,8 +29,8 @@ def create_campaign(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. Проверяем, существует ли выбранное рекламное место
-    _require_active_placement(db, campaign_data.placement_id)
+    # 1. Проверяем выбранное рекламное место (если не вся сеть) и ставку
+    _check_targeting(db, campaign_data.placement_id, campaign_data.cpc_bid)
 
     # 2. Создаем рекламную кампанию: владелец и статус задаются сервером
     new_campaign = Campaign(
@@ -43,14 +44,26 @@ def create_campaign(
     return new_campaign
 
 
-def _require_active_placement(db: Session, placement_id: int) -> None:
-    exists = db.scalar(
-        select(Placement.id).where(Placement.id == placement_id, Placement.is_active.is_(True))
+def _check_targeting(db: Session, placement_id: int | None, cpc_bid: Decimal | None) -> None:
+    """Площадка должна быть доступна для рекламы (активна; сайт партнёра — одобрен),
+    а ставка — не ниже её цены клика: иначе кампания никогда бы не показалась.
+    Кампания на всю сеть (placement_id = None) показывается там, где ставки хватает."""
+    if placement_id is None:
+        return
+    floor = db.scalar(
+        select(Placement.price_per_click).outerjoin(Placement.site).where(
+            Placement.id == placement_id, Placement.is_active.is_(True),
+            or_(Placement.site_id.is_(None), Site.status == SiteStatus.APPROVED))
     )
-    if exists is None:
+    if floor is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Указанная рекламная площадка не найдена или неактивна",
+        )
+    if cpc_bid is not None and cpc_bid < floor:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Ставка ниже цены клика площадки ({floor:.2f})",
         )
 
 
@@ -222,8 +235,9 @@ def update_campaign(
         return current != value
 
     changes = {k: v for k, v in data.model_dump(exclude_unset=True).items() if differs(k, v)}
-    if "placement_id" in changes:
-        _require_active_placement(db, changes["placement_id"])
+    if {"placement_id", "cpc_bid"} & changes.keys():
+        _check_targeting(db, changes.get("placement_id", campaign.placement_id),
+                         changes.get("cpc_bid", campaign.cpc_bid))
 
     start = changes.get("start_date", campaign.start_date)
     end = changes.get("end_date", campaign.end_date)

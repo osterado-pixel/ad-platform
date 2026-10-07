@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     payout_min_amount: Decimal = Field(default=Decimal("20"), gt=0)
     # Цена клика для новой площадки партнёра (администратор может изменить у площадки)
     partner_default_cpc: Decimal = Field(default=Decimal("0.10"), ge=0)
+    # Аукцион показов: доля показов случайной кампании (остальные — с наибольшим «ставка × CTR»).
+    # Без неё новая кампания без кликов никогда не набрала бы статистику и не попала бы в показ
+    auction_explore_rate: float = Field(default=0.1, ge=0, le=1)
     # Сколько площадок (мест под баннер) партнёр может создать на одном сайте
     partner_max_placements_per_site: int = Field(default=20, ge=1)
 
