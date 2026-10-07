@@ -115,7 +115,7 @@ def get_my_campaigns(
 @router.get("/ai-status", response_model=AIStatus)
 def ai_status(_admin: User = Depends(require_admin)):
     """Включена ли AI-проверка объявлений (для админ-панели)."""
-    return AIStatus(enabled=ai.is_enabled(), model=settings.ai_model, auto_reject=settings.ai_auto_reject,
+    return AIStatus(enabled=ai.is_enabled(), model=ai.model_name(), auto_reject=settings.ai_auto_reject,
                     auto_approve=settings.ai_auto_approve)
 
 

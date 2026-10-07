@@ -2,6 +2,7 @@ import os
 import secrets
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -63,6 +64,9 @@ class Settings(BaseSettings):
     # AI-проверка объявлений (Claude). Нет ключа — проверка выключена, модерация только ручная
     anthropic_api_key: str = ""
     ai_model: str = "claude-opus-5-5"
+    # Кто проверяет объявления и сайты: auto — Claude, если задан ANTHROPIC_API_KEY, иначе Gemini
+    # (GEMINI_API_KEY, модель GEMINI_MODEL); anthropic / gemini — только он
+    ai_moderation_provider: Literal["auto", "anthropic", "gemini"] = "auto"
     ai_timeout_seconds: float = Field(default=30, gt=0)
     # Автопилот модерации (нужен ANTHROPIC_API_KEY). Модель уверенно нашла нарушение (reject + high) —
     # кампания отклоняется сама; уверенно одобрила (approve + low) и стоп-фразы не нашлись — запускается
