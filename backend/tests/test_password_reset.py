@@ -149,3 +149,30 @@ def test_smtp_error_is_logged_not_raised(monkeypatch, caplog):
     with mock.patch.object(smtplib, "SMTP", side_effect=OSError("connection refused")):
         assert mailer.send_email("a@example.com", "Тема", "Текст") is False
     assert "Не удалось отправить письмо" in caplog.text
+
+
+# ---------- Подмена адреса в ссылке (заголовок Host) ----------
+def test_real_email_needs_public_url(client, user, sent, monkeypatch, caplog):
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "public_url", "")
+    r = client.post(FORGOT, json={"email": "user@example.com"}, headers={"Host": "evil.example.com"})
+    assert r.status_code == 202          # ответ тот же — по нему не узнать, есть ли такой email
+    assert sent == []                     # но письмо со ссылкой на чужой домен не уходит
+    assert "PUBLIC_URL" in caplog.text
+
+
+def test_host_header_ignored_with_public_url(client, user, sent, monkeypatch):
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "public_url", "https://ads.example.com")
+    client.post(FORGOT, json={"email": "user@example.com"}, headers={"Host": "evil.example.com"})
+    assert "https://ads.example.com/app#/reset/" in sent[0][2] and "evil" not in sent[0][2]
+
+
+def test_password_change_voids_reset_link(client, db, user, sent):
+    client.post(FORGOT, json={"email": "user@example.com"})
+    token = _token(sent[0][2])
+    h = {"Authorization": f"Bearer {create_access_token(user.id, token_version=user.token_version)}"}
+    r = client.post("/api/v1/auth/change-password", headers=h,
+                    json={"current_password": "old-password", "new_password": "changed-password"})
+    assert r.status_code == 200
+    assert client.post(RESET, json={"token": token, "new_password": "attacker-pass"}).status_code == 400

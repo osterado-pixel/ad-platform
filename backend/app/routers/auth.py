@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -23,6 +24,7 @@ from app.schemas import ForgotPassword, PasswordChange, ResetPassword, Token, Us
 from app.services.partners import find_referrer
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Авторизация"])
+log = logging.getLogger(__name__)
 
 EMAIL_TAKEN = "Пользователь с таким email уже существует"
 
@@ -99,6 +101,8 @@ def change_password(
     with write_lock():
         current_user.hashed_password = get_password_hash(data.new_password)
         current_user.token_version += 1
+        # Неиспользованная ссылка «забыли пароль» после смены пароля больше не действует
+        db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == current_user.id))
         db.commit()
     return Token(access_token=create_access_token(current_user.id, token_version=current_user.token_version))
 
@@ -108,6 +112,15 @@ RESET_MAX_PER_EMAIL_PER_HOUR = 3
 RESET_MAX_PER_IP_PER_HOUR = 10
 RESET_SENT = "Если такой email зарегистрирован, мы отправили на него ссылку для смены пароля"
 RESET_INVALID = "Ссылка для смены пароля недействительна или устарела — запросите новую"
+
+
+def _reset_link_base(request: Request) -> str | None:
+    """Адрес сайта для ссылки в письме. Для настоящих писем (SMTP настроен) — только PUBLIC_URL:
+    адрес из запроса задаёт заголовок Host, и злоумышленник, подставив свой домен, получил бы
+    в письме жертве ссылку с её токеном на свой сайт. Без SMTP письмо идёт в журнал — тогда можно."""
+    if settings.public_url:
+        return settings.public_url.rstrip("/")
+    return None if settings.smtp_host else str(request.base_url).rstrip("/")
 
 
 def _reset_hash(token: str) -> str:
@@ -127,14 +140,17 @@ def forgot_password(data: ForgotPassword, request: Request, background: Backgrou
     ratelimit.record(db, ("reset_ip", ip), ("reset_email", data.email))
 
     user = db.scalar(select(User).where(User.email == data.email))
-    if user is not None:
+    base = _reset_link_base(request)
+    if user is not None and base is None:
+        log.error("PUBLIC_URL не задан — письмо для смены пароля не отправлено (адрес из запроса для "
+                  "настоящих писем не используется: его можно подменить заголовком Host)")
+    elif user is not None:
         token = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_minutes)
         with write_lock():
             db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
             db.add(PasswordResetToken(user_id=user.id, token_hash=_reset_hash(token), expires_at=expires_at))
             db.commit()
-        base = settings.public_url.rstrip("/") or str(request.base_url).rstrip("/")
         # Токен — после #: часть адреса после # браузер не отправляет на сервер (и в журналы прокси)
         link = f"{base}/app#/reset/{token}"
         # Текст — на языке запроса; собираем сейчас: фоновая задача выполняется после ответа
