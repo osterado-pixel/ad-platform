@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import get_db, write_lock
 from app.models import User
 from app.schemas import PasswordChange, Token, UserCreate, UserResponse
+from app.services.partners import find_referrer
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Авторизация"])
 
@@ -29,7 +30,8 @@ def register(data: UserCreate, request: Request, db: Session = Depends(get_db)):
     if db.scalar(select(User.id).where(User.email == data.email)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_TAKEN)
 
-    user = User(email=data.email, hashed_password=get_password_hash(data.password))
+    user = User(email=data.email, hashed_password=get_password_hash(data.password),
+                referred_by_id=find_referrer(db, data.ref))
     db.add(user)
     try:
         db.commit()

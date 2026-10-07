@@ -271,8 +271,20 @@ async function copy(text) {
 }
 
 // ---------- Вход и регистрация ----------
+// Реферальный код из ссылки приглашения (/app?ref=КОД). Запоминаем в браузере: человек может
+// зарегистрироваться не сразу. Хранилище может быть недоступно (приватный режим) — тогда только из адреса
+const REF_KEY = "adp_ref";
+const urlRef = new URLSearchParams(location.search).get("ref");
+function referralCode() {
+  try {
+    if (urlRef) localStorage.setItem(REF_KEY, urlRef);
+    return urlRef || localStorage.getItem(REF_KEY);
+  } catch { return urlRef; }
+}
+
 function authView() {
   let mode = "login";
+  const ref = referralCode();
   const error = h("div");
   const email = h("input", { type: "email", required: true, autocomplete: "email", id: "auth-email" });
   const password = h("input", { type: "password", required: true, minLength: 8, id: "auth-password",
@@ -289,7 +301,7 @@ function authView() {
       h("button", { type: "button", class: m === "register" ? "on" : "", onclick: () => setMode("register") }, t("auth.register")));
     error.replaceChildren();
   };
-  setMode("login");
+  setMode(urlRef ? "register" : "login"); // пришли по приглашению — сразу регистрация
 
   const form = h("form", {
     class: "card",
@@ -299,7 +311,8 @@ function authView() {
       submit.disabled = true;
       try {
         if (mode === "register") {
-          await api("POST", "/auth/register", { email: email.value, password: password.value });
+          await api("POST", "/auth/register", { email: email.value, password: password.value, ...(ref ? { ref } : {}) });
+          try { localStorage.removeItem(REF_KEY); } catch { /* хранилище недоступно */ }
         }
         const token = await api("POST", "/auth/login",
           { username: email.value, password: password.value }, { form: true, keepSession: true });

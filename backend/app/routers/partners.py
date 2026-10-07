@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -16,14 +16,14 @@ from app.auth import get_current_user, require_admin
 from app.config import settings
 from app.database import get_db, write_lock
 from app.models import (
-    PartnerTransaction, Payout, PayoutStatus, Placement, Site, SiteDailyStat, SiteStatus, User,
+    EarningSource, PartnerEarning, PartnerTransaction, Payout, PayoutStatus, Placement, Site, SiteDailyStat, SiteStatus, User,
 )
 from app.pagination import before_id_param, fetch_page, limit_param, offset_param
 from app.routers.stats import Days, _ctr, _period
 from app.schemas import (
     PartnerDayStat, PartnerPlacementCreate, PartnerSiteTotals, PartnerSummary, PartnerTotals,
     PartnerTransactionResponse, PayoutAdminResponse, PayoutCreate, PayoutProcess, PayoutResponse,
-    PlacementResponse, SiteAdminResponse, SiteCreate, SiteModerate, SiteResponse, TransferRequest,
+    PlacementResponse, ReferralInfo, SiteAdminResponse, SiteCreate, SiteModerate, SiteResponse, TransferRequest,
     WalletBalanceResponse,
 )
 from app.services import partners
@@ -183,6 +183,22 @@ def my_payouts(response: Response, limit: int = limit_param(default=20), offset:
                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     query = select(Payout).where(Payout.user_id == user.id).order_by(Payout.id.desc())
     return fetch_page(db, query, response, limit, offset)
+
+
+# ---------- Реферальная программа ----------
+@router.get("/referral", response_model=ReferralInfo)
+def referral(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Реферальная ссылка и итоги: кого пригласили и сколько начислено."""
+    code = partners.referral_code(db, user)
+    base = settings.public_url.rstrip("/") or str(request.base_url).rstrip("/")
+    invited = db.scalar(select(func.count()).select_from(User).where(User.referred_by_id == user.id))
+    active = db.scalar(select(func.count()).select_from(User).where(
+        User.referred_by_id == user.id, User.created_at >= partners.referral_since()))
+    earned = db.scalar(select(func.coalesce(func.sum(PartnerEarning.amount), 0)).where(
+        PartnerEarning.user_id == user.id, PartnerEarning.source == EarningSource.REFERRAL))
+    return ReferralInfo(code=code, link=f"{base}/app?ref={code}", share=float(settings.referral_share),
+                        days=settings.referral_days, invited=invited, active=active,
+                        earned_total=Decimal(earned).quantize(Decimal("0.01")))
 
 
 # ---------- Администратор ----------

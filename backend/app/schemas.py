@@ -54,6 +54,8 @@ class UserCreate(BaseModel):
 
     email: NormalizedEmail
     password: Password
+    # Реферальный код пригласившего (из ссылки ?ref=). Неизвестный код регистрации не мешает
+    ref: str | None = Field(default=None, max_length=64)
 
 
 class PasswordChange(BaseModel):
@@ -742,3 +744,13 @@ class PayoutAdminResponse(PayoutResponse):
 
 class PayoutProcess(BaseModel):
     note: str | None = Field(default=None, max_length=500)
+
+
+class ReferralInfo(BaseModel):
+    code: str
+    link: str = Field(description="Ссылка для приглашения: регистрация по ней привязывает пользователя к вам")
+    share: float = Field(description="Доля дохода платформы с приглашённого: 0.1 = 10%")
+    days: int = Field(description="Сколько дней с регистрации приглашённого начисляется вознаграждение")
+    invited: int = Field(description="Сколько пользователей зарегистрировалось по ссылке")
+    active: int = Field(description="Из них ещё приносят вознаграждение (не прошло days дней)")
+    earned_total: Money = Field(description="Начислено за всё время (включая созревающее)")

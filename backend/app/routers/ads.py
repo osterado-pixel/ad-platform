@@ -246,12 +246,15 @@ def _charge_click(db: Session, request: Request, campaign: Charge) -> bool:
                 # description — String(255), а title может быть до 255 символов: обрезаем
                 description=f"Списание за клик по кампании #{campaign.id} ({campaign.title})"[:255],
             )
+        share = Decimal("0")
         if campaign.site_id is not None:
             # Свои объявления на своём сайте: партнёр заплатил бы сам себе — доли нет
-            share = (partners.share_of(price, campaign.revenue_share)
-                     if campaign.publisher_id != campaign.user_id else Decimal("0"))
+            if campaign.publisher_id != campaign.user_id:
+                share = partners.share_of(price, campaign.revenue_share)
             partners.bump_site_daily(db, campaign.site_id, clicks=1, revenue=price, earnings=share)
             partners.accrue(db, campaign.publisher_id, share, EarningSource.SITE)
+        # Пригласившим рекламодателя и партнёра — доля от того, что осталось платформе
+        partners.accrue_referrals(db, (campaign.user_id, campaign.publisher_id), price - share)
         db.commit()
         return True
 

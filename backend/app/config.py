@@ -139,6 +139,10 @@ class Settings(BaseSettings):
     payout_min_amount: Decimal = Field(default=Decimal("20"), gt=0)
     # Цена клика для новой площадки партнёра (администратор может изменить у площадки)
     partner_default_cpc: Decimal = Field(default=Decimal("0.10"), ge=0)
+    # Реферальная программа: доля дохода платформы (после доли партнёра-сайта) с приглашённого
+    # пользователя — пригласившему, и сколько дней с регистрации приглашённого она начисляется
+    referral_share: Decimal = Field(default=Decimal("0.10"), ge=0, le=Decimal("0.5"))
+    referral_days: int = Field(default=365, ge=1, le=3650)
     # Аукцион показов: доля показов случайной кампании (остальные — с наибольшим «ставка × CTR»).
     # Без неё новая кампания без кликов никогда не набрала бы статистику и не попала бы в показ
     auction_explore_rate: float = Field(default=0.1, ge=0, le=1)

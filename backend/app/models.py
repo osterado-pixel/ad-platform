@@ -66,6 +66,11 @@ class User(Base):
     # Заработок партнёра, доступный к выводу (уже «созрел» — см. app/services/partners.py).
     # Отдельно от balance: рекламный баланс тратится на клики, а этот — выплачивается партнёру
     earnings_balance: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
+    # Реферальная программа: свой код (выдаётся при первом запросе ссылки) и кто пригласил.
+    # Пригласивший получает REFERRAL_SHARE дохода платформы с приглашённого REFERRAL_DAYS дней
+    referral_code: Mapped[str | None] = mapped_column(String(16), unique=True)
+    referred_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True)
     # Число записей в журнале транзакций — total для истории без COUNT(*) (см. app/ledger.py)
     transactions_count: Mapped[int] = mapped_column(default=0, server_default="0")
     # Версия токенов: смена пароля увеличивает её, и все ранее выданные токены перестают действовать

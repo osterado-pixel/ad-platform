@@ -283,10 +283,10 @@ def test_migration_backfills_placement_stats_and_guards_downgrade(tmp_path):
     con.commit()
     con.close()
 
-    failed = _alembic(db_path, "downgrade", "-1")
+    failed = _alembic(db_path, "downgrade", "f699f89dbf7e")
     assert failed.returncode != 0 and "всю сеть" in failed.stderr  # кампанию на всю сеть не потерять молча
     con = sqlite3.connect(db_path)
     con.execute("DELETE FROM campaigns WHERE id = 4")
     con.commit()
     con.close()
-    assert _alembic(db_path, "downgrade", "-1").returncode == 0
+    assert _alembic(db_path, "downgrade", "f699f89dbf7e").returncode == 0

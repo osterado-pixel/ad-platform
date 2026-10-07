@@ -12,11 +12,14 @@
 Все изменения earnings_balance — атомарные UPDATE с условием в той же транзакции БД, что и запись
 в журнале: баланс не уходит в минус при параллельных запросах и всегда сходится с журналом.
 """
+import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_DOWN, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -73,6 +76,55 @@ def accrue(db: Session, user_id: int, amount: Decimal, source: EarningSource) ->
         set_={"amount": table.c.amount + stmt.excluded.amount},
     )
     db.execute(stmt)
+
+
+# ---------- Реферальная программа ----------
+# Без похожих символов (0/O, 1/I/L): код диктуют и переписывают руками
+REFERRAL_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def find_referrer(db: Session, code: str | None) -> int | None:
+    """id владельца реферального кода; неизвестный или пустой код — None (регистрация не страдает)."""
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+    return db.scalar(select(User.id).where(User.referral_code == code))
+
+
+def referral_code(db: Session, user: User) -> str:
+    """Код пользователя; при первом запросе — создаётся (случайный, 8 символов)."""
+    while user.referral_code is None:
+        code = "".join(secrets.choice(REFERRAL_ALPHABET) for _ in range(8))
+        with write_lock():
+            # Условие IS NULL: два параллельных первых запроса не перезапишут код друг друга
+            db.execute(update(User).where(User.id == user.id, User.referral_code.is_(None))
+                       .values(referral_code=code))
+            try:
+                db.commit()
+            except IntegrityError:  # такой код уже у другого пользователя — пробуем другой
+                db.rollback()
+                continue
+        db.refresh(user)
+    return user.referral_code
+
+
+def referral_since() -> datetime:
+    """Приглашённые, зарегистрированные позже этого момента, ещё приносят вознаграждение."""
+    return datetime.fromtimestamp(time.time(), tz=timezone.utc) - timedelta(days=settings.referral_days)
+
+
+def accrue_referrals(db: Session, user_ids, platform_net: Decimal) -> None:
+    """Вознаграждение пригласившим участников клика (рекламодателя и партнёра-сайта):
+    REFERRAL_SHARE от дохода платформы с клика. Без commit — в транзакции списания за клик."""
+    reward = share_of(platform_net, settings.referral_share) if platform_net > 0 else Decimal("0")
+    if reward <= 0:
+        return
+    since = referral_since()
+    for uid in dict.fromkeys(u for u in user_ids if u is not None):  # без повторов
+        referrer = db.scalar(select(User.referred_by_id).where(
+            User.id == uid, User.referred_by_id.is_not(None), User.created_at >= since))
+        if referrer is not None:
+            accrue(db, referrer, reward, EarningSource.REFERRAL)
 
 
 def maturity_cutoff():
