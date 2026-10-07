@@ -132,6 +132,13 @@ class Settings(BaseSettings):
     # Сколько минут действует ссылка для смены пароля
     password_reset_minutes: int = Field(default=30, ge=5, le=24 * 60)
 
+    # Уведомления по email (app/services/notify.py): решения по кампаниям, сайтам, выплатам; «заканчиваются
+    # деньги» — когда баланс рекламодателя с активными кампаниями ниже LOW_BALANCE_THRESHOLD; ежедневная
+    # сводка администраторам — только если что-то ждёт решения. Нужен SMTP (иначе письма — в журнал)
+    notifications: bool = True
+    low_balance_threshold: Decimal = Field(default=Decimal("5"), ge=0)
+    admin_digest: bool = True
+
     # Redis — брокер очереди Celery (фоновые задачи). В Docker адрес задаёт docker-compose
     redis_url: str = "redis://localhost:6379/0"
 

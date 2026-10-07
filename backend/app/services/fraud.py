@@ -19,6 +19,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.database import write_lock
+from app.services import notify
 from app.models import Click, EarningSource, PartnerEarning, Placement, Site, SiteDailyStat, SiteStatus, User
 from app.stats import utc_today
 
@@ -113,6 +114,7 @@ def auto_block(db: Session, days: int = AUTO_BLOCK_DAYS) -> list[int]:
             site.status = SiteStatus.BLOCKED
             site.rejection_reason = f"Автоматическая блокировка, признаки накрутки: {reasons}"
             db.commit()
+        notify.site_decided(site, site.owner)
         forfeit_pending(db, row["user_id"])
         blocked.append(row["site_id"])
     return blocked

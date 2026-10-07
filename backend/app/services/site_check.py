@@ -28,6 +28,7 @@ from app import ai
 from app.config import settings
 from app.database import write_lock
 from app.models import Site, SiteStatus
+from app.services import notify
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
         site.check_verdict, site.check_summary = verdict, (summary or "")[:1000]
         site.check_reasons = result.reasons if result else None
         site.checked_at = datetime.now(timezone.utc)
+        before = site.status
         if site.status == SiteStatus.PENDING and result is not None:  # решение админа не трогаем
             if settings.ai_auto_reject and result.verdict == "reject" and result.risk == "high":
                 site.status = SiteStatus.REJECTED
@@ -182,6 +184,8 @@ def check_site(session_factory: Callable[[], Session], site_id: int,
                 site.status, site.rejection_reason = SiteStatus.APPROVED, None
         db.commit()
         db.refresh(site)
+        if site.status != before:
+            notify.site_decided(site, site.owner)
         db.expunge(site)
         return site
 

@@ -27,7 +27,7 @@ from app.schemas import (
     PlacementResponse, ReferralInfo, SiteAdminResponse, SiteCreate, SiteModerate, SiteResponse, TransferRequest,
     WalletBalanceResponse,
 )
-from app.services import fraud, partners, site_check
+from app.services import fraud, notify, partners, site_check
 
 router = APIRouter(prefix="/api/v1/partner", tags=["Партнёрская программа"])
 admin_router = APIRouter(prefix="/api/v1/admin/partner", tags=["Партнёрская программа (для админа)"])
@@ -231,6 +231,7 @@ def moderate_site(site_id: int, data: SiteModerate, db: Session = Depends(get_db
     site = db.get(Site, site_id)
     if site is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сайт не найден")
+    changed = site.status != data.status
     with write_lock():
         site.status = data.status
         site.rejection_reason = data.reason
@@ -242,6 +243,8 @@ def moderate_site(site_id: int, data: SiteModerate, db: Session = Depends(get_db
     if data.forfeit_pending and data.status == SiteStatus.BLOCKED:
         fraud.forfeit_pending(db, site.user_id)
     db.refresh(site)
+    if changed:  # смена доли без смены статуса — без письма
+        notify.site_decided(site, site.owner)
     return site
 
 
@@ -291,14 +294,18 @@ def admin_payouts(
 def payout_paid(payout_id: int, data: PayoutProcess, db: Session = Depends(get_db),
                 _admin: User = Depends(require_admin)):
     """Деньги партнёру отправлены (вручную, по реквизитам заявки)."""
-    return partners.mark_paid(db, payout_id, data.note)
+    payout = partners.mark_paid(db, payout_id, data.note)
+    notify.payout_processed(payout, payout.owner)
+    return payout
 
 
 @admin_router.post("/payouts/{payout_id}/reject", response_model=PayoutAdminResponse)
 def payout_reject(payout_id: int, data: PayoutProcess, db: Session = Depends(get_db),
                   _admin: User = Depends(require_admin)):
     """Отклонить заявку: сумма вернётся партнёру в «доступно к выводу»."""
-    return partners.reject_payout(db, payout_id, data.note)
+    payout = partners.reject_payout(db, payout_id, data.note)
+    notify.payout_processed(payout, payout.owner)
+    return payout
 
 
 @admin_router.post("/mature")

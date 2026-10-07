@@ -11,6 +11,7 @@ from app.config import settings
 from app.database import background_session_factory, get_db
 from app.models import Campaign, CampaignStatus, Placement, Site, SiteStatus, User, UserRole
 from app.moderation import run_ai_review
+from app.services import notify
 from app.pagination import fetch_page_with_total, limit_param, offset_param
 from app.schemas import (
     AIStatus, CampaignAdminResponse, CampaignCreate, CampaignModerate, CampaignResponse, CampaignUpdate,
@@ -184,6 +185,7 @@ def moderate_campaign(
     campaign.rejection_reason = moderation_data.rejection_reason
     db.commit()
     db.refresh(campaign)
+    notify.campaign_decided(campaign, campaign.owner)
     return campaign
 
 

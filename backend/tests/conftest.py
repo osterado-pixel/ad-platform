@@ -17,6 +17,8 @@ for _key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "SENTRY_DS
 # Автопроверка сайтов партнёров ходит в интернет — в тестах выключена (tests/test_site_check.py
 # включает её сам, с подменённой сетью)
 os.environ["SITE_AUTO_CHECK"] = "false"
+# Письма-уведомления — в тестах выключены (tests/test_notify.py включает их и перехватывает)
+os.environ["NOTIFICATIONS"] = "false"
 # Минимальная стоимость bcrypt: в тестах стойкость к перебору не нужна, а скорость — да
 os.environ.setdefault("BCRYPT_ROUNDS", "4")
 

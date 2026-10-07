@@ -14,6 +14,7 @@ from app import ai
 from app.config import settings
 from app.database import write_lock
 from app.models import Campaign, CampaignStatus
+from app.services import notify
 from app.services.moderation_service import find_local_violations
 
 log = logging.getLogger(__name__)
@@ -64,5 +65,7 @@ def run_ai_review(session_factory: Callable[[], Session], campaign_id: int) -> C
                 campaign.status = CampaignStatus.ACTIVE
         db.commit()
         db.refresh(campaign)
+        if campaign.status != CampaignStatus.MODERATION:  # автопилот принял решение — сообщить владельцу
+            notify.campaign_decided(campaign, campaign.owner)
         db.expunge(campaign)
         return campaign

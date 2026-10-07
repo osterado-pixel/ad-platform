@@ -16,7 +16,7 @@ from app.auth import (
 )
 from app.config import settings
 from app.database import get_db, write_lock
-from app.i18n import tr
+from app.i18n import current_language, tr
 from app.models import PasswordResetToken, User
 from app.services import mailer
 from app.schemas import ForgotPassword, PasswordChange, ResetPassword, Token, UserCreate, UserResponse
@@ -37,7 +37,7 @@ def register(data: UserCreate, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_TAKEN)
 
     user = User(email=data.email, hashed_password=get_password_hash(data.password),
-                referred_by_id=find_referrer(db, data.ref))
+                referred_by_id=find_referrer(db, data.ref), language=current_language())
     db.add(user)
     try:
         db.commit()
@@ -72,6 +72,10 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     ratelimit.clear(db, "login_email", email)  # владелец вошёл — счётчик ошибок по email сброшен
+    if user.language != current_language():  # письма — на языке, которым пользуются сейчас
+        with write_lock():
+            user.language = current_language()
+            db.commit()
     return Token(access_token=create_access_token(user.id, token_version=user.token_version))
 
 

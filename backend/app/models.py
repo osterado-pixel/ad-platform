@@ -71,6 +71,10 @@ class User(Base):
     referral_code: Mapped[str | None] = mapped_column(String(16), unique=True)
     referred_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    # Язык писем: язык кабинета при регистрации и последнем входе
+    language: Mapped[str] = mapped_column(String(2), default="en", server_default="en")
+    # Письмо «заканчиваются деньги» уже отправлено (сбрасывается, когда баланс снова выше порога)
+    low_balance_notified: Mapped[bool] = mapped_column(default=False, server_default="0")
     # Число записей в журнале транзакций — total для истории без COUNT(*) (см. app/ledger.py)
     transactions_count: Mapped[int] = mapped_column(default=0, server_default="0")
     # Версия токенов: смена пароля увеличивает её, и все ранее выданные токены перестают действовать

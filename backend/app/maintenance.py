@@ -104,6 +104,19 @@ def fraud_block_sync(session_factory: Callable[[], Session] = SessionLocal) -> N
         log.warning("Заблокированы за накрутку сайты партнёров: %s", blocked)
 
 
+def daily_emails_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
+    """«Заканчиваются деньги» рекламодателям и сводка администраторам."""
+    from app.services import notify
+    try:
+        with session_factory() as db:
+            if settings.notifications:
+                notify.low_balance(db)
+            if settings.notifications and settings.admin_digest:
+                notify.admin_digest(db)
+    except SQLAlchemyError:
+        log.exception("Ошибка при ежедневных уведомлениях")
+
+
 def recheck_sites_sync(session_factory: Callable[[], Session] = SessionLocal) -> None:
     from app.services.site_check import recheck_pending
     try:
@@ -129,6 +142,7 @@ async def schedule_daily_purge(interval_seconds: float = PURGE_INTERVAL_SECONDS)
             # Накрутка: явные случаи блокируются до того, как заработок созреет
             if settings.fraud_auto_block:
                 await asyncio.to_thread(fraud_block_sync)
+            await asyncio.to_thread(daily_emails_sync)
             # Сайты на проверке, которые не открылись или не проверены, — проверить снова
             if settings.site_auto_check:
                 await asyncio.to_thread(recheck_sites_sync)
