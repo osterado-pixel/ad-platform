@@ -1,0 +1,14 @@
+# Что не копировать в образ при сборке (COPY . .): зависимости ставятся в образе заново,
+# сборка — тоже, секреты передаются переменными окружения
+node_modules
+.next
+out
+coverage
+.env
+.env*.local
+npm-debug.log*
+Dockerfile
+.dockerignore
+.git
+README.md
+AGENTS.md

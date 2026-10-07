@@ -1,0 +1,16 @@
+.header {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; }
+.logo { font-weight: 800; font-size: 19px; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
+.nav { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
+.nav > a:not(:global(.btn)) { color: var(--muted); text-decoration: none; font-weight: 500; }
+.nav > a:not(:global(.btn)):hover { color: var(--text); }
+
+/* На телефоне — только «Войти»: разделы доступны прокруткой */
+@media (max-width: 640px) {
+  .nav > a:not(:global(.btn)) { display: none; }
+}

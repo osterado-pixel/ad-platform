@@ -1,0 +1,23 @@
+.hero { padding-top: 80px; }
+.badge {
+  display: inline-block; margin-bottom: 16px; padding: 4px 12px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 14px;
+}
+.lead { font-size: 19px; max-width: 640px; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+
+.steps {
+  list-style: none; padding: 0; margin: 24px 0 0;
+  display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.stepNo {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; margin-bottom: 12px;
+  border-radius: 50%; background: var(--accent); color: var(--accent-text); font-weight: 700;
+}
+
+.pricing { margin-top: 24px; }
+.price { font-size: 24px; font-weight: 700; margin: 4px 0 8px; }
+
+.faq { display: grid; gap: 12px; max-width: 760px; margin: 24px auto 0; }
+.faq summary { font-weight: 600; cursor: pointer; }
+.faq details[open] summary { margin-bottom: 8px; }

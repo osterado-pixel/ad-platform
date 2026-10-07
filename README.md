@@ -324,17 +324,17 @@ const { items, total } = await r.json();
 `Content-Security-Policy: default-src 'none'`, у `/app` — строгий CSP (только свои скрипты);
 по HTTPS — `Strict-Transport-Security`.
 
-**AI-копирайтер в React.** Готовый хук — [`examples/react/useAdTask.js`](examples/react/useAdTask.js)
-(скопируйте в проект): запускает `POST /ai/generate-async`, опрашивает `GET /ai/tasks/{id}`
+**AI-копирайтер в React.** Готовый хук — [`frontend/src/hooks/useAdTask.ts`](frontend/src/hooks/useAdTask.ts)
+(используется на странице `/generate` сайта; для своего проекта скопируйте вместе с `src/services/api.ts`): запускает `POST /ai/generate-async`, опрашивает `GET /ai/tasks/{id}`
 (1 → 4 с, до 150 с), прекращает опрос при уходе со страницы, отдаёт причину ошибки от сервера
 (402 — мало денег, 422 — текст не прошёл модерацию, 429 — много задач, 503 — выключен).
 
 ```jsx
-import { useAdTask } from "./useAdTask";
+import { useAdTask } from "@/hooks/useAdTask";
 
-function AdGenerator({ token, onUse }) {
+function AdGenerator({ onUse }) {
   const [product, setProduct] = useState("");
-  const task = useAdTask({ apiUrl: "https://ads.example.com/api/v1", token });
+  const task = useAdTask(); // адрес API и токен — из src/services/api.ts
   return (
     <div>
       <textarea value={product} onChange={(e) => setProduct(e.target.value)} />

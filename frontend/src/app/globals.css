@@ -1,0 +1,101 @@
+/* Те же цвета, что у кабинета /app (backend/app/static/ui/app.css): переход с сайта в кабинет — без «другого продукта» */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --border: #dde1e6;
+  --text: #1a1d21;
+  --muted: #5b6470;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --accent-soft: #e3ecfd;
+  --ok: #1b7f3b;
+  --ok-soft: #dcf3e3;
+  --danger: #c62828;
+  --danger-soft: #fde4e4;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 16px rgb(0 0 0 / 0.04);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121418;
+    --surface: #1b1e23;
+    --surface-2: #23272d;
+    --border: #343a42;
+    --text: #e7e9ec;
+    --muted: #a0a8b3;
+    --accent: #5b8def;
+    --accent-text: #0d1117;
+    --accent-soft: #1d2a44;
+    --ok: #5cc985;
+    --ok-soft: #173326;
+    --danger: #f07070;
+    --danger-soft: #3a1f22;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  /* Системные шрифты: без загрузки с Google (быстрее, без передачи данных посетителей третьим лицам) */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+
+h1, h2, h3 { line-height: 1.2; margin: 0 0 12px; }
+h1 { font-size: clamp(30px, 5vw, 48px); letter-spacing: -0.02em; }
+h2 { font-size: clamp(24px, 3.5vw, 32px); letter-spacing: -0.01em; }
+h3 { font-size: 18px; }
+p { margin: 0 0 12px; }
+
+.container { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+.section { padding: 64px 0; }
+.muted { color: var(--muted); }
+.center { text-align: center; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 20px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 600;
+  text-decoration: none; cursor: pointer;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; box-shadow: var(--shadow);
+}
+
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+
+.notice { padding: 10px 12px; border-radius: 8px; font-size: 15px; }
+.notice.ok { background: var(--ok-soft); color: var(--ok); }
+.notice.error { background: var(--danger-soft); color: var(--danger); }
+.notice.info { background: var(--accent-soft); color: var(--accent); }
+
+label { display: block; font-weight: 600; margin-bottom: 6px; }
+input, textarea {
+  width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit;
+}
+textarea { resize: vertical; }
+progress { width: 100%; accent-color: var(--accent); }
+
+/* Переход по якорю (#demo, #pricing): заголовок раздела не прячется под закреплённой шапкой */
+section[id] { scroll-margin-top: 72px; }
