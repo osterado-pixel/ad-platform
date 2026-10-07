@@ -1,23 +1,62 @@
-.hero { padding-top: 80px; }
-.badge {
-  display: inline-block; margin-bottom: 16px; padding: 4px 12px; border-radius: 999px;
-  background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 14px;
+/* --- Первый экран --- */
+.hero { position: relative; overflow: hidden; padding: 96px 0 72px; border-bottom: 1px solid var(--border); }
+.glow {
+  position: absolute; top: -120px; left: 50%; transform: translateX(-50%);
+  width: min(900px, 120vw); height: 380px; border-radius: 50%; pointer-events: none; filter: blur(70px);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 45%, transparent),
+                                      color-mix(in srgb, #06b6d4 30%, transparent) 55%, transparent);
+  opacity: 0.55;
 }
-.lead { font-size: 19px; max-width: 640px; }
-.actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.heroInner { position: relative; text-align: center; }
+.badge {
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px; padding: 5px 12px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--accent); font-size: 13px; font-weight: 600;
+}
+.badgeDot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.title { max-width: 860px; margin: 0 auto; font-size: clamp(32px, 6vw, 60px); line-height: 1.08; letter-spacing: -0.025em; }
+.gradientText {
+  background: linear-gradient(90deg, var(--accent), #06b6d4 55%, var(--ok));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lead { max-width: 680px; margin: 22px auto 0; font-size: 19px; color: var(--muted); }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 30px; }
 
+.sectionHead { text-align: center; margin-bottom: 28px; }
+
+/* --- Как это работает --- */
 .steps {
-  list-style: none; padding: 0; margin: 24px 0 0;
+  list-style: none; padding: 0; margin: 0;
   display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 .stepNo {
   display: inline-grid; place-items: center; width: 32px; height: 32px; margin-bottom: 12px;
   border-radius: 50%; background: var(--accent); color: var(--accent-text); font-weight: 700;
 }
+.features { margin-top: 16px; }
 
-.pricing { margin-top: 24px; }
-.price { font-size: 24px; font-weight: 700; margin: 4px 0 8px; }
+/* --- Цены --- */
+.plans { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: stretch; }
+.plan {
+  position: relative; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 26px; box-shadow: var(--shadow);
+}
+.planPrimary { border: 2px solid var(--accent); box-shadow: 0 10px 40px color-mix(in srgb, var(--accent) 18%, transparent); }
+.popular {
+  position: absolute; top: -12px; right: 20px; padding: 3px 12px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-text); font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.plan h3 { margin-bottom: 4px; }
+.price { margin: 14px 0 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.01em; }
+.price span { font-size: 14px; font-weight: 500; color: var(--muted); }
+.planItems { list-style: none; padding: 0; margin: 12px 0 22px; display: grid; gap: 8px; }
+.planItems li::before { content: "✓"; margin-right: 8px; color: var(--ok); font-weight: 700; }
+.planCta { margin-top: auto; }
 
-.faq { display: grid; gap: 12px; max-width: 760px; margin: 24px auto 0; }
+/* --- Вопросы --- */
+.faq { display: grid; gap: 12px; max-width: 760px; margin: 0 auto; }
 .faq summary { font-weight: 600; cursor: pointer; }
 .faq details[open] summary { margin-bottom: 8px; }
+
+@media (prefers-reduced-motion: reduce) { .badgeDot { animation: none; } }

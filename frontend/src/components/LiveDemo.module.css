@@ -1,0 +1,58 @@
+.demo {
+  display: grid; gap: 24px; grid-template-columns: 1fr 1fr;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  padding: 24px; box-shadow: var(--shadow);
+}
+@media (max-width: 760px) { .demo { grid-template-columns: 1fr; padding: 16px; } }
+
+.form { display: grid; gap: 16px; align-content: start; }
+.submit { width: 100%; padding: 13px 20px; }
+.note { margin: 0; font-size: 13px; color: var(--muted); }
+.gate { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--accent-soft); }
+.gate p { margin: 0; font-size: 15px; }
+
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent-text) 35%, transparent); border-top-color: var(--accent-text);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.panel {
+  display: grid; gap: 14px; align-content: start;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 18px;
+}
+.panelHead {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.status {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 600 12px/1 ui-monospace, "Cascadia Code", Consolas, monospace; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--accent);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.dotBusy { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+.muted { color: var(--muted); font-size: 12px; }
+
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab, .tabOn {
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.tabOn { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+
+.fields { display: grid; gap: 4px; margin: 0; }
+.fields dt {
+  margin-top: 8px; font: 600 11px/1.2 ui-monospace, "Cascadia Code", Consolas, monospace;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+}
+.fields dd { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
+.headline { font-weight: 700; font-size: 17px; }
+.cta { color: var(--accent); font-weight: 600; }
+.footnote { margin: 0; font-size: 13px; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner, .dotBusy { animation: none; }
+}
