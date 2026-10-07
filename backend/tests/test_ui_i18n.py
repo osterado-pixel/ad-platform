@@ -123,6 +123,8 @@ def test_server_codes_have_translations():
         assert f"ptx.{ptx.value}" in keys
     for method in typing.get_args(schemas.PayoutMethod):
         assert f"method.{method}" in keys
+    for flag in typing.get_args(schemas.FraudFlag):
+        assert f"fraudflag.{flag}" in keys
     # Literal[...] | None из карточки модерации → значения Literal
     fields = schemas.CampaignAdminResponse.model_fields
     verdicts = typing.get_args(typing.get_args(fields["ai_verdict"].annotation)[0])

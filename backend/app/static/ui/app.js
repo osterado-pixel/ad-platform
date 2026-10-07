@@ -1214,12 +1214,41 @@ async function adminSitesView(filter = "pending") {
   const feed = await offsetList(`/admin/partner/sites?limit=50${query}`, row, rows);
   add(wrap,
     h("h1", {}, t("nav.sites")),
+    await fraudCard(() => reload()),
     filterTabs(["pending", "approved", "rejected", "blocked", "all"], filter, (f) => (f === "all" ? t("sites.all") : known("sstatus", f)), reload),
     h("div", { class: "card" }, feed.first ? h("div", { class: "table-wrap" }, h("table", {},
       h("thead", {}, h("tr", {}, h("th", {}, t("sites.site")), h("th", {}, t("sites.share")), h("th", {}, t("col.actions")))), rows))
       : h("div", { class: "empty" }, t("sites.empty")),
       h("div", { style: "margin-top:10px" }, feed.more)));
   return wrap;
+}
+
+// Подозрительная активность за 14 дней: сайты с признаками накрутки (решение — за администратором)
+const FRAUD_DAYS = 14;
+async function fraudCard(onChange) {
+  const suspicious = (await api("GET", `/admin/partner/fraud?days=${FRAUD_DAYS}`)).filter((r) => r.flags.length);
+  const rows = suspicious.map((r) => {
+    const block = h("button", { class: "small danger" }, t("fraud.blockForfeit"));
+    block.onclick = async () => {
+      if (!confirm(t("fraud.blockConfirm", { name: r.name, amount: money(r.pending) }))) return;
+      const body = { status: "blocked", reason: t("fraud.reason"), forfeit_pending: true };
+      if (await run(block, () => api("POST", `/admin/partner/sites/${r.site_id}/moderate`, body), t("fraud.blocked"))) onChange();
+    };
+    return h("tr", {},
+      h("td", {}, h("b", {}, r.name), " ", siteBadge(r.status),
+        h("div", { class: "small muted" }, r.domain, " · ", r.owner_email)),
+      h("td", { class: "num" }, int(r.impressions)), h("td", { class: "num" }, int(r.clicks)),
+      h("td", { class: "num" }, ctr(r)), h("td", { class: "num" }, int(r.unique_ips)),
+      h("td", { class: "num" }, money(r.pending)),
+      h("td", {}, r.flags.map((f) => h("div", {}, h("span", { class: "badge rejected" }, known("fraudflag", f))))),
+      h("td", {}, r.status === "blocked" ? null : block));
+  });
+  return h("div", { class: "card" },
+    h("h2", {}, t("fraud.title")),
+    h("p", { class: "small muted" }, t("fraud.hint", { days: FRAUD_DAYS })),
+    table([t("sites.site"), { label: t("col.impressions"), num: 1 }, { label: t("col.clicks"), num: 1 },
+      { label: t("col.ctr"), num: 1 }, { label: t("fraud.ips"), num: 1 }, { label: t("partner.pending"), num: 1 },
+      t("fraud.flags"), ""], rows, t("fraud.none")));
 }
 
 // ---------- Админ: выплаты партнёрам ----------

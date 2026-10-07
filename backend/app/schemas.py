@@ -634,6 +634,8 @@ class SiteModerate(BaseModel):
     # Своя доля сайта (0–1); null — не менять. Чтобы вернуть общую, передайте reset_share
     revenue_share: Decimal | None = Field(default=None, ge=0, le=1, decimal_places=3)
     reset_share: bool = False
+    # При блокировке: аннулировать созревающий заработок владельца с сайтов (накрутка)
+    forfeit_pending: bool = False
 
     @field_validator("reason")
     @classmethod
@@ -754,3 +756,26 @@ class ReferralInfo(BaseModel):
     invited: int = Field(description="Сколько пользователей зарегистрировалось по ссылке")
     active: int = Field(description="Из них ещё приносят вознаграждение (не прошло days дней)")
     earned_total: Money = Field(description="Начислено за всё время (включая созревающее)")
+
+
+FraudFlag = Literal["high_ctr", "few_ips", "clicks_over_impressions"]
+
+
+class FraudRow(BaseModel):
+    site_id: int
+    name: str
+    domain: str
+    status: SiteStatus
+    user_id: int
+    owner_email: str
+    impressions: int
+    clicks: int
+    ctr: float
+    unique_ips: int = Field(description="Разных адресов среди кликов (HMAC от IP)")
+    earnings: Money = Field(description="Заработок партнёра с сайта за период")
+    pending: Money = Field(description="Созревающий заработок владельца (по всем его сайтам)")
+    flags: list[FraudFlag]
+
+
+class ForfeitResult(BaseModel):
+    forfeited: Money

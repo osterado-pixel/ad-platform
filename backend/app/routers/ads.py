@@ -244,7 +244,8 @@ def _charge_click(db: Session, request: Request, campaign: Charge) -> bool:
     with write_lock():
         # 2. Фиксируем клик. Два одновременных повтора в одну минуту нарушат уникальный
         #    индекс — второй отсекается атомарно (важно для PostgreSQL, где нет write_lock)
-        db.add(Click(campaign_id=campaign.id, ip_hash=ip_hash, time_window=minute, cost=price))
+        db.add(Click(campaign_id=campaign.id, ip_hash=ip_hash, time_window=minute, cost=price,
+                     placement_id=campaign.placement_id))
         try:
             db.flush()
         except IntegrityError:

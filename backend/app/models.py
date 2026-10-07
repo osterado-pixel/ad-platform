@@ -206,6 +206,9 @@ class PartnerEarning(Base):
     source: Mapped[EarningSource] = mapped_column(_enum(EarningSource, "earning_source"), primary_key=True)
     amount: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
     matured: Mapped[bool] = mapped_column(default=False, server_default="0")
+    # Аннулировано администратором (накрутка): сумма переносится сюда из amount и не выплачивается.
+    # Сумма, а не флаг: клики на честных сайтах того же партнёра в тот же день продолжают начисляться в amount
+    forfeited: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"), server_default="0")
 
 
 class PartnerTxType(str, enum.Enum):
@@ -330,6 +333,8 @@ class Click(Base):
     __tablename__ = "clicks"
     __table_args__ = (
         UniqueConstraint("campaign_id", "ip_hash", "time_window", name="uq_clicks_dedup"),
+        # Отчёт о накрутке: клики площадки за последние дни
+        Index("ix_clicks_placement_id_time_window", "placement_id", "time_window"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -342,6 +347,8 @@ class Click(Base):
     # повторы, а проверка в _charge_click — повторы в течение CLICK_DEDUP_MINUTES
     time_window: Mapped[int] = mapped_column(BigInteger)
     cost: Mapped[Decimal] = mapped_column(Money)
+    # Площадка, на которой кликнули (для отчёта о накрутке по сайтам партнёров); у старых записей — NULL
+    placement_id: Mapped[int | None] = mapped_column(ForeignKey("placements.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

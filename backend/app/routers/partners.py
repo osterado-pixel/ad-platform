@@ -21,12 +21,13 @@ from app.models import (
 from app.pagination import before_id_param, fetch_page, limit_param, offset_param
 from app.routers.stats import Days, _ctr, _period
 from app.schemas import (
+    ForfeitResult, FraudRow,
     PartnerDayStat, PartnerPlacementCreate, PartnerSiteTotals, PartnerSummary, PartnerTotals,
     PartnerTransactionResponse, PayoutAdminResponse, PayoutCreate, PayoutProcess, PayoutResponse,
     PlacementResponse, ReferralInfo, SiteAdminResponse, SiteCreate, SiteModerate, SiteResponse, TransferRequest,
     WalletBalanceResponse,
 )
-from app.services import partners
+from app.services import fraud, partners
 
 router = APIRouter(prefix="/api/v1/partner", tags=["Партнёрская программа"])
 admin_router = APIRouter(prefix="/api/v1/admin/partner", tags=["Партнёрская программа (для админа)"])
@@ -234,8 +235,25 @@ def moderate_site(site_id: int, data: SiteModerate, db: Session = Depends(get_db
         elif data.revenue_share is not None:
             site.revenue_share = data.revenue_share
         db.commit()
+    if data.forfeit_pending and data.status == SiteStatus.BLOCKED:
+        fraud.forfeit_pending(db, site.user_id)
     db.refresh(site)
     return site
+
+
+@admin_router.get("/fraud", response_model=list[FraudRow])
+def fraud_report(days: int = Query(default=14, ge=1, le=30, description="За сколько дней (клики хранятся 30)"),
+                 db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Сайты с кликами за период и признаки накрутки (подозрительные — сверху)."""
+    return fraud.fraud_report(db, days)
+
+
+@admin_router.post("/users/{user_id}/forfeit", response_model=ForfeitResult)
+def forfeit(user_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Аннулировать созревающий заработок партнёра с сайтов: он не станет доступен к выводу."""
+    if db.get(User, user_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    return ForfeitResult(forfeited=fraud.forfeit_pending(db, user_id))
 
 
 @admin_router.get("/payouts", response_model=list[PayoutAdminResponse])
