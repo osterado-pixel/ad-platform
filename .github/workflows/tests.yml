@@ -49,6 +49,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key-0123456789abcdefghijklmnop
       PG_URL: postgresql+psycopg2://postgres:testpassword@localhost:5432/ad_platform_test
       PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # Выпуск на сервер — когда в Settings → Secrets заданы DEPLOY_HOST и остальные DEPLOY_* (deploy/bootstrap.sh)
+      DEPLOY_ENABLED: ${{ secrets.DEPLOY_HOST != '' }}
 
     defaults:
       run:
@@ -129,6 +131,10 @@ jobs:
           npm run lint
           npm run build
 
+      - name: Скрипты сервера (deploy/*.sh) — проверка shellcheck
+        working-directory: .
+        run: shellcheck -S warning deploy/*.sh
+
       # --- 4. Docker: конфигурации, сборка, запуск собранного образа ---
       - name: Конфигурация docker compose корректна
         working-directory: .
@@ -184,7 +190,7 @@ jobs:
             -e SECRET_KEY="$SECRET_KEY" \
             -e DATABASE_URL=sqlite:////app/data/app.db \
             ad-platform-api:test
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8000/api/v1/health && exit 0
             sleep 2
           done
@@ -195,7 +201,7 @@ jobs:
         working-directory: .
         run: |
           docker run -d --name frontend -p 3000:3000 --add-host api:host-gateway ad-platform-frontend:test
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/ > /dev/null && curl -fsS http://127.0.0.1:3000/api/v1/health; then exit 0; fi
             sleep 2
           done
@@ -283,3 +289,38 @@ jobs:
           tags: ${{ steps.meta_bot.outputs.tags }}
           labels: ${{ steps.meta_bot.outputs.labels }}
           cache-from: type=gha,scope=bot
+
+      # --- 6. ВЫПУСК НА СЕРВЕР ---
+      # Только при push в main, после публикации образов и если сервер подключён (секреты DEPLOY_*).
+      # На сервере deploy/deploy.sh: копия базы → новые образы → проверка → автооткат при сбое
+      # (тогда и этот шаг падает — GitHub пришлёт письмо о неудачном прогоне)
+      - name: Выпуск на сервер
+        if: env.PUBLISH == 'true' && env.DEPLOY_ENABLED == 'true'
+        working-directory: .
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Ключ сервера закреплён (DEPLOY_KNOWN_HOSTS): подменённый сервер не получит образы и команды
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          target="${DEPLOY_USER:-deploy}@$DEPLOY_HOST"
+          ssh_opts=(-i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20)
+          scp "${ssh_opts[@]}" docker-compose.prod.yml docker-compose.https.yml "$target:/opt/ad-platform/"
+          scp "${ssh_opts[@]}" deploy/Caddyfile deploy/backup.sh deploy/deploy.sh "$target:/opt/ad-platform/deploy/"
+          # Временный токен этого прогона — только чтобы скачать образы; после выпуска — выход
+          # Имя и тег намеренно подставляются здесь, в CI, а не на сервере
+          # shellcheck disable=SC2029
+          echo "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$target" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          rc=0
+          # shellcheck disable=SC2029
+          ssh "${ssh_opts[@]}" "$target" \
+            "chmod +x /opt/ad-platform/deploy/*.sh && /opt/ad-platform/deploy/deploy.sh sha-${GITHUB_SHA::7}" || rc=$?
+          ssh "${ssh_opts[@]}" "$target" "docker logout ghcr.io" || true
+          exit $rc

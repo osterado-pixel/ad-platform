@@ -103,6 +103,41 @@ docker run -d --name ad_platform_redis_dev --restart unless-stopped -p 127.0.0.1
 
 `-P solo` обязателен на Windows: обычный режим Celery (prefork) там не работает. Логи: `docker compose -f docker-compose.prod.yml logs -f celery_worker`.
 
+### Сервер без ручного обслуживания (DigitalOcean, Ubuntu 24.04)
+
+Один раз — настройка сервера (от root, на сервере):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<владелец>/<репозиторий>/main/deploy/bootstrap.sh -o bootstrap.sh
+DOMAIN=ads.example.com ACME_EMAIL=you@example.com bash bootstrap.sh
+```
+
+`deploy/bootstrap.sh` ставит Docker, файрвол (открыты только 22, 80, 443), автоматические обновления
+безопасности, fail2ban, swap; отключает вход по паролю (если у root есть SSH-ключ); создаёт пользователя
+`deploy`, `/opt/ad-platform/.env` со случайными паролями и ключом и ежедневную копию базы (03:30).
+
+Затем в GitHub → Settings → Secrets and variables → Actions:
+
+| Что | Значение |
+|---|---|
+| секрет `DEPLOY_HOST` | IP сервера |
+| секрет `DEPLOY_USER` | `deploy` |
+| секрет `DEPLOY_SSH_KEY` | закрытый SSH-ключ, открытый — в `~/.ssh/authorized_keys` на сервере |
+| секрет `DEPLOY_KNOWN_HOSTS` | вывод `ssh-keyscan -t ed25519 <IP>` (ключ сервера закреплён) |
+| переменная `PUBLIC_URL` | `https://ads.example.com` — для проверки доступности |
+
+Дальше всё само:
+
+- **Выпуск** — каждый push в `main`: CI проверяет, публикует образы и запускает на сервере `deploy/deploy.sh`:
+  копия базы → новые образы → проверка здоровья → при сбое **автооткат** на прежнюю версию (и письмо от GitHub
+  о неудачном прогоне). Миграции база применяет при старте.
+- **Копии базы** — каждый день (`deploy/backup.sh`, systemd-таймер), 14 дней, копия проверяется. Копии вне
+  сервера — `S3_BUCKET`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` в `.env` (например, DigitalOcean Spaces).
+- **Доступность** — каждые 10 минут (`.github/workflows/uptime.yml`): API, сайт и виджет; не отвечают — письмо.
+- **Решения** — автопилот модерации кампаний и сайтов, блокировка накрутки, созревание заработка, письма
+  пользователям и сводка администратору (см. «Правила, которые стоит знать»). Человеку остаются только
+  сомнительные случаи и выплаты партнёрам.
+
 ### Вручную (любая ОС)
 
 ```bash

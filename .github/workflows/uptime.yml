@@ -1,0 +1,29 @@
+name: Доступность сайта
+
+# Каждые 10 минут: отвечают ли сайт и API. Не отвечают — прогон падает, и GitHub присылает письмо
+# (тому, кто последним менял этот файл; настройки: GitHub → Settings → Notifications → Actions).
+# Адрес — переменная репозитория PUBLIC_URL (Settings → Secrets and variables → Actions → Variables),
+# например https://ads.example.com. Не задана — проверка пропускается.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Сайт и API отвечают
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: vars.PUBLIC_URL != ''
+    steps:
+      - name: Проверка
+        env:
+          URL: ${{ vars.PUBLIC_URL }}
+        run: |
+          # Несколько попыток: одиночный сетевой сбой — не повод будить человека
+          check() { curl -fsS --max-time 15 --retry 3 --retry-delay 20 --retry-all-errors -o /dev/null "$1"; }
+          check "$URL/api/v1/health" && echo "API: ok"
+          check "$URL/" && echo "Сайт: ok"
+          check "$URL/widget.js" && echo "Виджет: ok"
